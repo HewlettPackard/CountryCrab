@@ -133,8 +133,7 @@ def compile_walksat_m(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple
 
 def compile_walksat_g(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     instance_name = config["instance"]
-
-    instance_name = config["instance"]
+    vpr_netlist_loc = config["netlist_dir"]
     clauses_list = load_clauses_from_cnf(instance_name)
 
     clauses = len(clauses_list)
@@ -177,7 +176,7 @@ def compile_walksat_g(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple
                     last_var = var_list[variables-1]
                     superTile_varIndices[i].extend([last_var]*(num_wta_inputs-int(variables%num_wta_inputs)))
     elif scheduling == "vpr":
-        net_filename = '/home/bhattact/CountryCrab/data/vpr_netlist/'+os.path.basename(instance_name).split(".cnf")[0]+'.net'
+        net_filename = vpr_netlist_loc+os.path.basename(instance_name).split(".cnf")[0]+'.net'
         superTile_varIndices, num_superTiles = read_netlist(net_filename,variables,clauses,num_wta_inputs)
         for i in range(num_superTiles):
             if len(superTile_varIndices[i])<num_wta_inputs:

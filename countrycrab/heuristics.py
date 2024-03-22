@@ -196,18 +196,19 @@ def walksat_g(architecture, config, params):
                 for i in range(num_superTiles):
                     superTile_eligibility[:,i] = cp.heaviside(cp.sum(mv_arr[:,superTile_varIndices[i]],axis=1),0)
         
-                selectedSuperTile = np.argmax(np.multiply(np.random.uniform(0.01,1,size=(max_runs,num_superTiles)),cp.asnumpy(superTile_eligibility)),axis=1)
+                selectedSuperTile = cp.argmax(cp.multiply(cp.random.uniform(0.01,1,size=(max_runs,num_superTiles)),superTile_eligibility),axis=1)
                 selected_VarIndices = [superTile_varIndices[int(i)] for i in list(selectedSuperTile)]
                 
-                dummy_var_index = np.zeros((max_runs,variables))
-                allIters = np.arange(max_runs).reshape((max_runs,1))
+                dummy_var_index = cp.zeros((max_runs,variables))
+                allIters = cp.arange(max_runs).reshape((max_runs,1))
                 dummy_var_index[allIters,selected_VarIndices[:]] = 1
                 
                 y[mv_arr < 1] = -100
                 y[dummy_var_index<1] = -100
         
                 tiled_mv_arr = mv_arr[allIters,selected_VarIndices[:]]
-                all_variable_indices = cp.array(np.copy(selected_VarIndices))
+                #all_variable_indices = cp.array(cp.copy(selected_VarIndices))
+                all_variable_indices = cp.copy(cp.array(selected_VarIndices))
                 all_variable_indices[tiled_mv_arr < 1] = -1
                 all_variable_indices_sorted = cp.sort(-all_variable_indices,axis=1)
                 all_variable_indices_sorted = -all_variable_indices_sorted
@@ -249,11 +250,11 @@ def walksat_g(architecture, config, params):
                 for i in range(num_superTiles):
                     superTile_eligibility[:,i] = cp.heaviside(cp.sum(mv_arr[:,superTile_varIndices[i]],axis=1),0)
         
-                selectedSuperTile = np.argmax(np.multiply(np.random.uniform(0.01,1,size=(max_runs,num_superTiles)),cp.asnumpy(superTile_eligibility)),axis=1)
+                selectedSuperTile = cp.argmax(cp.multiply(cp.random.uniform(0.01,1,size=(max_runs,num_superTiles)),superTile_eligibility),axis=1)
                 selected_VarIndices = [superTile_varIndices[int(i)] for i in list(selectedSuperTile)]
                 
-                dummy_var_index = np.zeros((max_runs,variables))
-                allIters = np.arange(max_runs).reshape((max_runs,1))
+                dummy_var_index = cp.zeros((max_runs,variables))
+                allIters = cp.arange(max_runs).reshape((max_runs,1))
                 dummy_var_index[allIters,selected_VarIndices[:]] = 1
                 y[dummy_var_index<1] = -100
 
