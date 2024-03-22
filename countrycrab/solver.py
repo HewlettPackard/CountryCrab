@@ -23,7 +23,7 @@ import json
 
 from countrycrab.compiler import compile_walksat_m, compile_walksat_g
 from countrycrab.analyze import vector_its
-from countrycrab.heuristics import walksat_m, walksat_g
+from countrycrab.heuristics import walksat_m, walksat_g, walksat_skc, walksat_b
 
 import cupy as cp
 
@@ -69,18 +69,22 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     heuristic_name = config.get("heuristic", 'walksat_m')
     heuristics_dict = {
         'walksat_m': walksat_m,
-        'walksat_g': walksat_g
+        'walksat_g': walksat_g,
+        'walksat_skc': walksat_skc,
+        'walksat_b': walksat_b
     }
     heuristic_function = heuristics_dict.get(heuristic_name)
     if heuristic_function is None:
         raise ValueError(f"Unknown heuristic: {heuristic_name}")
 
     # check if compiler and heuristic are compatible
-    accepted_herusitics = {
-        'compile_walksat_m': 'walksat_m',
-        'compile_walksat_g': 'walksat_g',
+    heuristic_to_compiler = {
+        'walksat_m' : 'compile_walksat_m',
+        'walksat_g' : 'compile_walksat_g',
+        'walksat_skc' : 'compile_walksat_g',
+        'walksat_b' : 'compile_walksat_g',
     }
-    if heuristic_name != accepted_herusitics.get(compiler_name):
+    if compiler_name != heuristic_to_compiler.get(heuristic_name):
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")
 
     # call the heuristic function with the necessary arguments
