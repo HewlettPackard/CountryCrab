@@ -284,6 +284,8 @@ def qubo_sat_map(config: t.Dict) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
     instance_name = config["instance"]
     clauses = load_clauses_from_cnf(instance_name)
 
+    num_vars = np.max(abs(np.concatenate(clauses, axis=0)))
+
     clauses_1 = []
     clauses_2 = []
     clauses_34 = []
@@ -315,12 +317,12 @@ def qubo_sat_map(config: t.Dict) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise RuntimeError("wrong mapping name!") 
     
     if use_4sat:
-        W, B, C = qubo_4sat_map(clauses_34, mapping_name, mapping_type)
+        W, B, C = qubo_4sat_map(num_vars, clauses_34, mapping_name, mapping_type)
     else:
         if mapping_type == "clause_wise":
-            W, B, C = clause_wise_qubo_3sat_map(clauses_34, mapping_name)
+            W, B, C = clause_wise_qubo_3sat_map(num_vars, clauses_34, mapping_name)
         else:
-            W, B, C = shared_qubo_3sat_map(clauses_34, mapping_name)
+            W, B, C = shared_qubo_3sat_map(num_vars, clauses_34, mapping_name)
     
     for c in clauses_1:
         if c[0] < 0:
@@ -356,9 +358,9 @@ def qubo_sat_map(config: t.Dict) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return W, B, C
 
 
-def shared_qubo_3sat_map(clauses: t.List[t.List[int]], mapping_name) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def shared_qubo_3sat_map(num_vars: int, 
+                         clauses: t.List[t.List[int]], mapping_name) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
     
-    num_vars = len(np.unique(abs(np.array(clauses))))
     num_clauses = len(clauses)
 
     cl = -np.array(clauses)            #invert the clauses to map to energy
@@ -607,9 +609,9 @@ def shared_qubo_3sat_map(clauses: t.List[t.List[int]], mapping_name) -> t.Tuple[
     return W, B, C
 
 
-def clause_wise_qubo_3sat_map(clauses: t.List[t.List[int]], mapping_name) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def clause_wise_qubo_3sat_map(num_vars: int, 
+                              clauses: t.List[t.List[int]], mapping_name) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
-    num_vars = len(np.unique(abs(np.concatenate(clauses, axis=0))))
     num_clauses = len(clauses)
 
     N = num_vars + num_clauses
@@ -691,9 +693,10 @@ def clause_wise_qubo_3sat_map(clauses: t.List[t.List[int]], mapping_name) -> t.T
 
 # Reduces the 4sat problem to 3sat: xa*xb*xc*xd -> xa*xb*y + penalty and 
 # performs quadratization according to the schemes above
-def qubo_4sat_map(clauses: t.List[t.List[int]], mapping_name, mapping_type) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
-
-    num_vars = len(np.unique(abs(np.concatenate(clauses, axis=0))))
+def qubo_4sat_map(num_vars: int, 
+                  clauses: t.List[t.List[int]], 
+                  mapping_name, 
+                  mapping_type) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     cl_3sat = []
     cl_4sat = []
@@ -775,9 +778,9 @@ def qubo_4sat_map(clauses: t.List[t.List[int]], mapping_name, mapping_type) -> t
     W0 += W0.transpose()
     
     if mapping_type == "clause_wise":
-        W, B, C = clause_wise_qubo_3sat_map(cl_3sat, mapping_name)
+        W, B, C = clause_wise_qubo_3sat_map(N, cl_3sat, mapping_name)
     else:
-        W, B, C = shared_qubo_3sat_map(cl_3sat, mapping_name)
+        W, B, C = shared_qubo_3sat_map(N, cl_3sat, mapping_name)
 
     W[:N, :N] += W0
     B[:N] += B0
