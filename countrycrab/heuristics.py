@@ -114,7 +114,8 @@ def walksat_m(architecture, config, params):
         # update inputs
         campie.flip_indices(inputs, update[:, cp.newaxis])
 
-    return violated_constr_mat, n_iters, inputs
+    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    return violated_constr_mat, n_iters, inputs, iterations_timepoints[np.newaxis, :]
 
 
 def walksat_g(architecture, config, params):
@@ -277,7 +278,8 @@ def walksat_g(architecture, config, params):
             update = update[cp.arange(update.shape[0]), random_indices]
         campie.flip_indices(var_inputs, update[:, cp.newaxis])
     
-    return violated_constr_mat, n_iters, var_inputs
+    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    return violated_constr_mat, n_iters, var_inputs, iterations_timepoints[np.newaxis, :]
 
 def walksat_skc(architecture, config, params):
     
@@ -401,7 +403,8 @@ def walksat_skc(architecture, config, params):
         #campie.flip_indices(var_inputs, update[:, cp.newaxis])
         campie.flip_indices(var_inputs, update[:, cp.newaxis])
     
-    return violated_constr_mat, n_iters, var_inputs
+    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    return violated_constr_mat, n_iters, var_inputs, iterations_timepoints[np.newaxis, :]
 
 def walksat_b(architecture, config, params):
     
@@ -528,4 +531,6 @@ def walksat_b(architecture, config, params):
             update = update[cp.arange(update.shape[0]), random_indices]
         campie.flip_indices(var_inputs, update[:, cp.newaxis])
     
-    return violated_constr_mat, n_iters, var_inputs
+    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    return violated_constr_mat, n_iters, var_inputs, iterations_timepoints[np.newaxis, :]
+

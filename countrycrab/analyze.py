@@ -47,6 +47,16 @@ def vector_its(iteration, probability, p_target = 0.99):
     return its
 
 
+def vector_tts(timepoints, probability, p_target = 0.99):
+    probability[probability == 0] = np.nan
+    tts = timepoints * np.log(1 - p_target) / np.log(1 - probability+1e-9)
+    
+    solved = np.where(probability >= p_target)[0]
+    if len(solved) > 0:
+        tts[probability >= p_target] = tts[solved[0]]
+    
+    return tts
+
 def generate_report(tracking_uri,experiment_name):
     mlflow.set_tracking_uri(tracking_uri)
     all_experiments = [exp.experiment_id for exp in mlflow.search_experiments()]

@@ -19,11 +19,11 @@ import pandas as pd
 import os
 import typing as t
 import json
-
+from inspect import getmembers, isfunction
 
 from countrycrab.compiler import compile_walksat_m, compile_walksat_g
-from countrycrab.analyze import vector_its
-from countrycrab.heuristics import walksat_m, walksat_g, walksat_skc, walksat_b
+from countrycrab.analyze import vector_its, vector_tts
+import countrycrab.heuristics
 
 import cupy as cp
 
@@ -68,10 +68,9 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     # load the heuristic function from a separate file
     heuristic_name = config.get("heuristic", 'walksat_m')
     heuristics_dict = {
-        'walksat_m': walksat_m,
-        'walksat_g': walksat_g,
-        'walksat_skc': walksat_skc,
-        'walksat_b': walksat_b
+        name: fn
+        for name, fn in getmembers(countrycrab.heuristics, isfunction)
+        if name[0] != "_" # "private" members
     }
     heuristic_function = heuristics_dict.get(heuristic_name)
     if heuristic_function is None:
@@ -88,7 +87,7 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")
 
     # call the heuristic function with the necessary arguments
-    violated_constr_mat, n_iters, inputs = heuristic_function(architecture, config,params)
+    violated_constr_mat, n_iters, inputs, iterations_timepoints = heuristic_function(architecture, config,params)
 
     # METRIC FUNCTIONS
     # target_probability
@@ -101,33 +100,60 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     max_flips = params.get("max_flips", 1000)
     # metric to use
     metric = params.get("metric", "frequentist")
-    # probability os solving the problem as a function of the iterations
-    p_vs_t = cp.sum(violated_constr_mat[:, 1 : n_iters + 1] == 0, axis=0) / max_runs
-    p_vs_t = cp.asnumpy(p_vs_t)
+    # tts computation precision
+    tts_deltatime = params.get("tts_deltatime", params.get("Tclk", 6e-9))
+    # probability of solving the problem as a function of the iterations
+    p_vs_it = cp.sum(violated_constr_mat[:, :n_iters] == 0, axis=0) / max_runs
+    # probability of solving the problem as a function of the time
+    # Notes:
+    #   For continuous-time solvers, the runs may have different time between all flips, because they occur asynchronously
+    #   We stored the violated_constr_mat per iteration (== flip), thus we must decouple the iteration and time per run
+    ts = cp.arange(np.nanmin(iterations_timepoints), np.nanmax(iterations_timepoints) + tts_deltatime, tts_deltatime)
+    time_to_iter = cp.apply_along_axis( # use apply_along_axis instead of vectorization to prevent needing literal TBs of (V)RAM
+        lambda tps: cp.sum(ts[:, np.newaxis] >= tps, axis=1) - 1,
+        arr = iterations_timepoints,
+        axis = 1
+    )
+    p_vs_t = cp.mean(p_vs_it[time_to_iter], axis=0)
     # check if the problem was solved at least one
-    solved = (np.sum(p_vs_t) > 0)
+    solved = (cp.sum(p_vs_it) > 0).item()
+    # get the arrays from the GPU to the CPU
+    p_vs_it = cp.asnumpy(p_vs_it)
+    p_vs_t = cp.asnumpy(p_vs_t)
+    ts = cp.asnumpy(ts)
+    iterations_timepoints = cp.asnumpy(iterations_timepoints)
+    
     if metric == "frequentist":
         # Compute iterations to solution for 99% of probability to solve the problem
-        iteration_vector = np.arange(1, len(p_vs_t)+1)
-        its = vector_its(iteration_vector, p_vs_t, p_target=p_solve)
+        iteration_vector = np.arange(1, len(p_vs_it)+1)
+        its = vector_its(iteration_vector, p_vs_it, p_target=p_solve)
+        tts = vector_tts(ts, p_vs_t, p_target=p_solve)
+
         if task == 'hpo':
             if solved:
                 # return the best (minimum) its and the corresponding max_flips
-                best_its = np.min(its[its > 0])
-                best_max_flips = np.where(its == its[its > 0][np.argmin(its[its > 0])])
-                return {"its": best_its, "max_flips_opt": best_max_flips[0][0]}
+                argbest_its = np.argmin(its[its > 0])
+                best_max_flips = np.where(its == its[its > 0][argbest_its])
+                return {
+                    "its": its[its > 0][argbest_its],
+                    "max_flips_opt": best_max_flips[0][0],
+                    "opt_tts": np.nanmin(tts)
+                }
             else:
-                return {"its": np.nan, "max_flips_opt": max_flips}
+                return {
+                    "its": np.nan,
+                    "max_flips_opt": max_flips,
+                    "opt_tts": np.nan,
+                }
         
         elif task == 'solve':
             if solved:
-                # return the its at the given max_flips
-                return {"its": its[-2]}
+                return {"its": its[-2], "opt_tts": tts[-2]}
             else:
-                return {"its": np.nan}
+                return {"its": np.nan, "tts": np.nan}
+            
         elif task == "debug":
-            inputs = cp.asnumpy(inputs)
-            return p_vs_t, cp.asnumpy(violated_constr_mat), cp.asnumpy(inputs)
+            return p_vs_it, cp.asnumpy(violated_constr_mat), cp.asnumpy(inputs), (ts, p_vs_t)
         else:
             raise ValueError(f"Unknown task: {task}")
     
@@ -162,8 +188,8 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
                 frequency[i] = np.sum(np.all(inputs == solution, axis=1))
             
             # Step 4: Compute the ITS as usual
-            iteration_vector = np.arange(1, len(p_vs_t)+1)
-            its = vector_its(iteration_vector, p_vs_t, p_target=p_solve)
+            iteration_vector = np.arange(1, len(p_vs_it)+1)
+            its = vector_its(iteration_vector, p_vs_it, p_target=p_solve)
 
         if task == 'hpo':
             if solved:

@@ -51,7 +51,7 @@ os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3,4,5,6,7"
 
 ## Scheduler usage
 The scheduler takes a configuration, which usually contains multiple instances and parameters, and parallelize them in multiple processes with `multiprocessing`.
-`ray` is used to schedule the various experiments and 'mlflow' to track the result.
+`ray` is used to schedule the various experiments and `mlflow` to track the result.
 An example of the scheduler usage is shown in `tests/scheduler_usage.ipynb`.
 
 After creating a configuration file for the experiment, then the experiment is run with
