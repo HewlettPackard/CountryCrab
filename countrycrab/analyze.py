@@ -26,10 +26,26 @@ from mlflow.utils.file_utils import local_file_uri_to_path
 
 def vector_its(iteration, probability, p_target = 0.99):
     epsilon = 1e-6
-    its = (iteration + 1) * np.log(1 - p_target) / np.log(1 - probability+epsilon)
-    if len(np.where(probability == 1)[0])>0:
-        its[np.where(probability == 1)[0]] = np.where(probability >=p_target)[0][0]*np.ones(len(np.where(probability == 1)[0]))
+    # #its = (iteration + 1) * np.log(1 - p_target) / np.log(1 - probability+epsilon)
+    # #if len(np.where(probability == 1)[0])>0:
+    # #    its[np.where(probability == 1)[0]] = np.where(probability >=p_target)[0][0]*np.ones(len(np.where(probability == 1)[0]))
+    # if len(np.where(probability >= p_target)[0])>0:
+    #     its = np.where(probability >= p_target,
+    #                 np.where(probability >= p_target)[0][0],
+    #                 (iteration + 1) * np.log(1 - p_target) / np.log(1 - probability+1e-6)
+    #     )
+    # else:
+    #     its = (iteration + 1) * np.log(1 - p_target) / np.log(1 - probability+1e-6)
+
+    
+    probability[probability==0]=np.nan
+    iterations_vect = np.arange(len(probability))
+    its = iterations_vect * np.log(1 - p_target) / np.log(1 - probability+1e-9)
+    solved = np.where(probability>=p_target)
+    if len(solved[0])>0:
+        its[probability>=p_target] = solved[0][0]
     return its
+
 
 def generate_report(tracking_uri,experiment_name):
     mlflow.set_tracking_uri(tracking_uri)
