@@ -2,7 +2,7 @@
 ## Introduction
 CountryCrab is a distributed simulator for physics-inspired optimization solvers. 
 It utilize both multiprocessing and GPU parallelization to maximize the performance (i.e. flips/s).
-CountryCrab was first used to benchmark Content Addressable Memories approaches to the solution of SAT solvers [[1]] and [[2]].
+CountryCrab was first used to benchmark Content Addressable Memories approaches to the solution of SAT solvers [[1]](#ref1) and [[2]](#ref2).
 
 ## Setting up the Jupyter Docker container
 
@@ -59,12 +59,13 @@ After creating a configuration file for the experiment, then the experiment is r
 python3 countrycrab/scheduler.py --tracking_uri=mlflow_tracking_uri --config=path_to_configuration_file
 ```
 
-## Reprint results from [[2]]
-Code and data to reprint the results in [2] can be found in `data/npj_uc_figures`.
+## Reprint results from [[2]](#ref2)
+Code and data to reprint the results in [[2]](#ref2) can be found in `data/npj_uc_figures`.
 
 ---
 
 ## References
 
-[1]: https://doi.org/10.1109/IEDM45741.2023.10413853 "Pedretti, G., et al. 'Zeroth and higher-order logic with content addressable memories.' 2023 IEDM"
-[2]: https://doi.org/10.1038/s44335-025-00020-w "Pedretti, G., et al. 'Solving Boolean satisfiability problems with resistive content addressable memories.' noj Unconventional Computing, 2024"
+1. <a id="ref1"></a> **Pedretti, G., et al.** "Zeroth and higher-order logic with content addressable memories." *2023 International Electron Devices Meeting (IEDM)*. IEEE, 2023. [DOI](https://doi.org/10.1109/IEDM45741.2023.10413853)
+
+2. <a id="ref2"></a> **Pedretti, G., et al.** "Solving Boolean satisfiability problems with resistive content addressable memories." *noj Unconventional Computing*, 2024. [DOI](https://doi.org/10.1038/s44335-025-00020-w)
