@@ -68,4 +68,4 @@ Code and data to reprint the results in [[2]](#ref2) can be found in `data/npj_u
 
 1. <a id="ref1"></a> **Pedretti, G., et al.** "Zeroth and higher-order logic with content addressable memories." *2023 International Electron Devices Meeting (IEDM)*. IEEE, 2023. [DOI](https://doi.org/10.1109/IEDM45741.2023.10413853)
 
-2. <a id="ref2"></a> **Pedretti, G., et al.** "Solving Boolean satisfiability problems with resistive content addressable memories." *noj Unconventional Computing*, 2024. [DOI](https://doi.org/10.1038/s44335-025-00020-w)
+2. <a id="ref2"></a> **Pedretti, G., et al.** "Solving Boolean satisfiability problems with resistive content addressable memories." *npj Unconventional Computing*, 2024. [DOI](https://doi.org/10.1038/s44335-025-00020-w)
