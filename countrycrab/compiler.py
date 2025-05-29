@@ -47,7 +47,7 @@ def count_variables(list_of_lists):
     # Return the largest integer. This in the feature can be changed to the actual number of variables
     return largest_integer
 
-def compile_walksat_m(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
+def compile_MNSAT(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     
     instance_name = config["instance"]
     clauses_list = load_clauses_from_cnf(instance_name)
@@ -134,7 +134,7 @@ def compile_walksat_m(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple
     return architecture, params
 
 
-def compile_walksat_g(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
+def compile_GNSAT(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     instance_name = config["instance"]
     vpr_netlist_loc = config.get("netlist_dir","~/CountryCrab/data/vpr_netlist/")
     clauses_list = load_clauses_from_cnf(instance_name)

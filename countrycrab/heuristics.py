@@ -25,7 +25,7 @@ import cupy as cp
 import warnings
 
 
-def walksat_m(architecture, config, params):
+def MNSAT(architecture, config, params):
 
     tcam = architecture[0]
     ram = architecture[1]
@@ -118,7 +118,7 @@ def walksat_m(architecture, config, params):
     return violated_constr_mat, n_iters, inputs, iterations_timepoints[np.newaxis, :]
 
 
-def walksat_g(architecture, config, params):
+def GNSAT(architecture, config, params):
 
     ramf_array = architecture[0]
     ramb_array = architecture[1]
@@ -259,7 +259,7 @@ def walksat_g(architecture, config, params):
                 dummy_var_index[allIters,selected_VarIndices[:]] = 1
                 y[dummy_var_index<1] = -100
 
-            y[mv_arr < 1] = -100
+            #y[mv_arr < 1] = -100
             y, violated_constr = map(
                     lambda x: x[cp.newaxis, :],
                     [y, violated_constr],

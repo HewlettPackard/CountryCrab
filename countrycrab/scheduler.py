@@ -44,8 +44,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     n_cores = config.get("n_cores", 1)
     scheduling = config.get("scheduling", "fill_first")
     # heuristics specification
-    heuristic_name = config.get("heuristic", 'walksat_m')
-    compiler_name = config.get("compiler", 'compile_walksat_m')
+    heuristic_name = config.get("heuristic", 'MNSAT')
+    compiler_name = config.get("compiler", 'compile_MNSAT')
 
     if task == 'hpo':
         # random sampling in case of hpo
@@ -79,7 +79,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     # Need this to log RayTune artifacts into MLflow runs' artifact store.
     run_config = RunConfig(
         name = config["experiment_name"],
-        local_dir=local_file_uri_to_path(mlflow.active_run().info.artifact_uri),
+        storage_path = local_file_uri_to_path(mlflow.active_run().info.artifact_uri),
+        #local_dir=local_file_uri_to_path(mlflow.active_run().info.artifact_uri),
         log_to_file=True,
     )
     tuner = tune.Tuner(

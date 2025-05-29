@@ -19,9 +19,10 @@ import pandas as pd
 import os
 import typing as t
 import json
+
 from inspect import getmembers, isfunction
 
-from countrycrab.compiler import compile_walksat_m, compile_walksat_g
+from countrycrab.compiler import compile_MNSAT, compile_GNSAT
 from countrycrab.analyze import vector_its, vector_tts
 import countrycrab.heuristics
 
@@ -42,10 +43,10 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     # in the case of a single core that is just the selected problem mapped to in-memory computing arrays
     # in the case of multiple cores, the compiler returns a multidimensional array with the mapping of the problem to the cores
 
-    compiler_name = config.get("compiler", 'compile_walksat_m')
+    compiler_name = config.get("compiler", 'compile_MNSAT')
     compilers_dict = {
-        'compile_walksat_m': compile_walksat_m,
-        'compile_walksat_g': compile_walksat_g
+        'compile_MNSAT': compile_MNSAT,
+        'compile_GNSAT': compile_GNSAT
     }
     compiler_function = compilers_dict.get(compiler_name)
     architecture, params = compiler_function(config, params)
@@ -66,7 +67,7 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
 
     
     # load the heuristic function from a separate file
-    heuristic_name = config.get("heuristic", 'walksat_m')
+    heuristic_name = config.get("heuristic", 'MNSAT')
     heuristics_dict = {
         name: fn
         for name, fn in getmembers(countrycrab.heuristics, isfunction)
@@ -78,10 +79,10 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
 
     # check if compiler and heuristic are compatible
     heuristic_to_compiler = {
-        'walksat_m' : 'compile_walksat_m',
-        'walksat_g' : 'compile_walksat_g',
-        'walksat_skc' : 'compile_walksat_g',
-        'walksat_b' : 'compile_walksat_g',
+        'MNSAT' : 'compile_MNSAT',
+        'GNSAT' : 'compile_GNSAT',
+        'walksat_skc' : 'compile_GNSAT',
+        'walksat_b' : 'compile_GNSAT',
     }
     if compiler_name != heuristic_to_compiler.get(heuristic_name):
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")
