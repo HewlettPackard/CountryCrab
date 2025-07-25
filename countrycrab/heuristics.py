@@ -392,15 +392,12 @@ def walksat_skc(architecture, config, params):
             update1 = update[0]
             
         if n_cores == 1:
-            # only one core, no need to do random picks
             update = update1
         else:
             # reduction -> randomly selecting one update
             update = update.T
             random_indices = cp.random.randint(0, update.shape[1], size=update.shape[0])
             update = update[cp.arange(update.shape[0]), random_indices]
-
-        #campie.flip_indices(var_inputs, update[:, cp.newaxis])
         campie.flip_indices(var_inputs, update[:, cp.newaxis])
     
     iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
@@ -511,7 +508,6 @@ def walksat_b(architecture, config, params):
             else:
                 raise ValueError(f"Unknown noise distribution: {noise_dist}")
 
-            
             y, violated_constr = map(
                     lambda x: x[cp.newaxis, :],
                     [y, violated_constr],
@@ -534,3 +530,278 @@ def walksat_b(architecture, config, params):
     iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
     return violated_constr_mat, n_iters, var_inputs, iterations_timepoints[np.newaxis, :]
 
+
+def memHNN(architecture, config, params):
+    """
+    Memristive Hopfield Neural Network implementation for solving QUBO problems.
+    Uses a thresholding mechanism on noisy local fields to update spins.
+    Supports simulated annealing with multiple update modalities.
+    
+    Args:
+        architecture: List containing [W, B, C] for QUBO mode or [W, B, C, tcam, ram] for k-SAT mode
+        config: Configuration dict with noise, threshold, annealing parameters
+        params: Execution parameters (max_runs, max_flips, etc.)
+    
+    Returns:
+        violated_constr_mat: Matrix of violated constraints over iterations
+        n_iters: Number of completed iterations
+        inputs: Final state of variables
+        iterations_timepoints: Timing information
+    """
+    import math
+    
+    # Get operation mode
+    mode = config.get("mode", "QUBO")
+    
+    # Get QUBO parameters from architecture - ensure all are CuPy arrays
+    W = cp.asarray(architecture[0], dtype=cp.float32)  # Weight matrix
+    B = cp.asarray(architecture[1], dtype=cp.float32)  # Linear terms
+    C = float(architecture[2])  # Constant term - convert to float scalar for CuPy compatibility
+    
+    # Get TCAM/RAM matrices for k-SAT mode
+    if mode == "k-SAT":
+        tcam = cp.asarray(architecture[3], dtype=cp.float32)
+        ram = cp.asarray(architecture[4], dtype=cp.float32)
+        n_vars = tcam.shape[1]  # Number "true", not auxiliary variables
+    
+    # Get execution parameters
+    max_runs = params.get("max_runs", 1000)
+    max_flips = params.get("max_flips", 1000)
+    n_cores = params.get("n_cores", 1)
+    noise_dist = params.get("noise_distribution", 'normal')
+    
+    # Get configuration parameters
+    initial_noise = config.get("noise", 0.8)  # Initial noise level
+    final_noise = config.get("final_noise", 0.0)  # Final noise level
+    threshold = config.get("threshold", 0.0)  # Decision threshold
+    
+    # Update mode settings
+    update_mode = config.get("update_mode", "sequential")  # sequential, random, stochastic_group
+    num_groups = config.get("num_groups", 10)  # Number of groups for stochastic group mode
+    annealing_schedule = config.get("annealing_schedule", "linear")
+    cooling_rate = config.get("cooling_rate", 0.95)  # For geometric schedule
+    
+    # Problem dimensions
+    variables = W.shape[0]
+    
+    # Initialize random spins (-1 or +1)
+    spin_inputs = 2 * cp.random.randint(2, size=(max_runs, variables)).astype(cp.float32) - 1
+    
+    # Convert to binary inputs for k-SAT mode
+    binary_inputs = (spin_inputs + 1) / 2
+    
+    # Track violated constraints
+    violated_constr_mat = cp.full((max_runs, max_flips), cp.nan, dtype=cp.float32)
+    
+    n_iters = 0
+    current_iter = 0
+    
+    # Calculate initial energy
+    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+    
+    # Calculate number of temperature steps based on update mode
+    if update_mode == "sequential" or update_mode == "random":
+        temp_steps = max(1, max_flips // variables)
+    elif update_mode == "stochastic_group":
+        temp_steps = max(1, max_flips // num_groups)
+    
+    # Main annealing loop
+    for temp_step in range(temp_steps):
+        if current_iter >= max_flips:
+            break
+        
+        # Calculate current noise level based on annealing schedule
+        progress = temp_step / (temp_steps - 1) if temp_steps > 1 else 1.0
+        
+        if annealing_schedule == "linear":
+            current_noise = initial_noise - progress * (initial_noise - final_noise)
+        elif annealing_schedule == "exponential":
+            current_noise = initial_noise * cp.exp(-5.0 * progress)
+        elif annealing_schedule == "geometric":
+            current_noise = initial_noise * (cooling_rate ** temp_step)
+        elif annealing_schedule == "logarithmic":
+            current_noise = initial_noise / cp.log(temp_step + 2)
+        else:
+            current_noise = initial_noise  # Constant noise (no annealing)
+            
+        # Ensure noise doesn't drop below final_noise
+        current_noise = max(current_noise, final_noise)
+        
+        # Apply update based on selected mode
+        if update_mode == "sequential":
+            # Update variables one by one in sequential order
+            for var_idx in range(variables):
+                if current_iter >= max_flips:
+                    break
+                
+                # Efficiently compute local field for just this variable
+                local_field = cp.zeros((max_runs,), dtype=cp.float32)
+                for j in range(variables):
+                    local_field += W[var_idx, j] * spin_inputs[:, j]
+                local_field += B[var_idx]
+                
+                # Add noise based on selected distribution
+                if noise_dist == 'normal':
+                    noisy_field = local_field + current_noise * cp.random.randn(*local_field.shape)
+                elif noise_dist == 'uniform':
+                    noisy_field = local_field + cp.random.uniform(-current_noise*cp.sqrt(3), 
+                                                                 current_noise*cp.sqrt(3), 
+                                                                 size=local_field.shape)
+                elif noise_dist == 'intrinsic':
+                    noisy_field = local_field + current_noise * cp.sqrt(cp.abs(local_field)) * cp.random.randn(*local_field.shape)
+                else:
+                    noisy_field = local_field
+                
+                # Compute new spin value based on threshold
+                new_spin = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                
+                # Update spin
+                spin_inputs[:, var_idx] = new_spin
+                binary_inputs = (spin_inputs + 1) / 2
+                
+                # Calculate violated constraints based on mode
+                if mode == "k-SAT":
+                    # Use TCAM matching to compute violated constraints
+                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    make_values = violated_clauses @ ram
+                    violated_constr = cp.sum(make_values > 0, axis=1)
+                else:  # QUBO or energy mode
+                    # Calculate energy using QUBO formulation
+                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    violated_constr = cp.round(energy).astype(cp.int32)
+                
+                violated_constr_mat[:, current_iter] = violated_constr
+                
+                # Early stopping if solution found
+                if cp.all(violated_constr == 0):
+                    break
+                
+                current_iter += 1
+                n_iters += 1
+                
+        elif update_mode == "random":
+            # Update variables one by one in random order
+            var_indices = cp.random.permutation(variables)
+            
+            for var_idx in var_indices:
+                if current_iter >= max_flips:
+                    break
+                
+                # Efficiently compute local field for just this variable
+                local_field = cp.zeros((max_runs,), dtype=cp.float32)
+                for j in range(variables):
+                    local_field += W[var_idx, j] * spin_inputs[:, j]
+                local_field += B[var_idx]
+                
+                # Add noise based on selected distribution
+                if noise_dist == 'normal':
+                    noisy_field = local_field + current_noise * cp.random.randn(*local_field.shape)
+                elif noise_dist == 'uniform':
+                    noisy_field = local_field + cp.random.uniform(-current_noise*cp.sqrt(3), 
+                                                                 current_noise*cp.sqrt(3), 
+                                                                 size=local_field.shape)
+                elif noise_dist == 'intrinsic':
+                    noisy_field = local_field + current_noise * cp.sqrt(cp.abs(local_field)) * cp.random.randn(*local_field.shape)
+                else:
+                    noisy_field = local_field
+                
+                # Compute new spin value based on threshold
+                new_spin = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                
+                # Update spin
+                spin_inputs[:, var_idx] = new_spin
+                binary_inputs = (spin_inputs + 1) / 2
+                
+                # Calculate violated constraints based on mode
+                if mode == "k-SAT":
+                    # Use TCAM matching to compute violated constraints
+                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    make_values = violated_clauses @ ram
+                    violated_constr = cp.sum(make_values > 0, axis=1)
+                else:  # QUBO or energy mode
+                    # Calculate energy using QUBO formulation
+                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    violated_constr = cp.round(energy).astype(cp.int32)
+                
+                violated_constr_mat[:, current_iter] = violated_constr
+                
+                # Early stopping if solution found
+                if cp.all(violated_constr == 0):
+                    break
+                
+                current_iter += 1
+                n_iters += 1
+
+        elif update_mode == "stochastic_group":
+            # Randomly assign each variable to one of num_groups groups
+            group_assignments = cp.random.randint(0, num_groups, size=variables)
+            
+            # Process each group
+            for group_id in range(num_groups):
+                if current_iter >= max_flips:
+                    break
+                
+                # Get indices of variables assigned to this group
+                group_indices = cp.where(group_assignments == group_id)[0]
+                
+                if len(group_indices) == 0:
+                    continue  # Skip empty groups
+                
+                # Compute local fields for all variables in this group
+                local_fields = cp.zeros((max_runs, len(group_indices)), dtype=cp.float32)
+                
+                # Efficient batch computation of local fields for the group
+                for idx, var_idx in enumerate(group_indices):
+                    local_fields[:, idx] = cp.sum(W[var_idx, :] * spin_inputs, axis=1) + B[var_idx]
+                
+                # Add noise based on selected distribution
+                if noise_dist == 'normal':
+                    noisy_fields = local_fields + current_noise * cp.random.randn(*local_fields.shape)
+                elif noise_dist == 'uniform':
+                    noisy_fields = local_fields + cp.random.uniform(-current_noise*cp.sqrt(3), 
+                                                                  current_noise*cp.sqrt(3), 
+                                                                  size=local_fields.shape)
+                elif noise_dist == 'intrinsic':
+                    noisy_fields = local_fields + current_noise * cp.sqrt(cp.abs(local_fields)) * cp.random.randn(*local_fields.shape)
+                else:
+                    noisy_fields = local_fields
+                
+                # Compute new spin values based on threshold
+                new_spins = 2 * (noisy_fields >= threshold).astype(cp.float32) - 1
+                
+                # Update spins for all variables in this group
+                for idx, var_idx in enumerate(group_indices):
+                    spin_inputs[:, var_idx] = new_spins[:, idx]
+                
+                # Update binary inputs for k-SAT mode
+                binary_inputs = (spin_inputs + 1) / 2
+                
+                # Calculate violated constraints based on mode
+                if mode == "k-SAT":
+                    # Use TCAM matching to compute violated constraints
+                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    make_values = violated_clauses @ ram
+                    violated_constr = cp.sum(make_values > 0, axis=1)
+                else:  # QUBO or energy mode
+                    # Calculate energy using QUBO formulation
+                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    violated_constr = cp.round(energy).astype(cp.int32)
+                
+                violated_constr_mat[:, current_iter] = violated_constr
+                
+                # Early stopping if solution found
+                if cp.all(violated_constr == 0):
+                    break
+                
+                current_iter += 1
+                n_iters += 1
+        
+    
+    # Final binary inputs for return value
+    inputs = (spin_inputs + 1) / 2
+    
+    # Calculate timing information
+    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    
+    # Keep results in CuPy until the end
+    return violated_constr_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]

@@ -791,6 +791,59 @@ def qubo_4sat_map(num_vars: int,
 
     return W, B, C
 
+
+def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
+    """
+    Compiler function for memHNN heuristic.
+    Extracts QUBO mapping from the CNF instance and also TCAM/RAM for k-SAT mode.
+    
+    Args:
+        config: Configuration dictionary with instance path and mapping settings
+        params: Execution parameters
+        
+    Returns:
+        architecture: List containing [W, B, C] for QUBO/energy mode or 
+                     [W, B, C, tcam, ram] for k-SAT mode
+        params: Updated parameters
+    """
+    
+    # Get operation mode
+    mode = config.get("mode", "QUBO")
+    
+    # Get QUBO mapping parameters from config
+    mapping_type = config.get("mapping_type", "clause_wise")
+    mapping_name = config.get("mapping_name", "Rosenberg")
+    
+    # Update config with mapping parameters if not already present
+    if "mapping_type" not in config:
+        config["mapping_type"] = mapping_type
+    if "mapping_name" not in config:
+        config["mapping_name"] = mapping_name
+    
+    # Extract QUBO coefficients from the CNF file
+    W, B, C = qubo_sat_map(config)
+    
+    # Store problem dimensions in params
+    variables = W.shape[0]
+    params['variables'] = variables
+    
+    if mode == "k-SAT":
+        # Also compile TCAM/RAM matrices like in MNSAT
+        mnsat_config = config.copy()
+        mnsat_config["mode"] = "MNSAT"  # Ensure we get the right format
+        mnsat_architecture, _ = compile_MNSAT(mnsat_config, params.copy())
+        
+        # Extract TCAM/RAM matrices
+        tcam = mnsat_architecture[0]
+        ram = mnsat_architecture[1]
+        
+        architecture = [W, B, C, tcam, ram]
+    else:
+        # QUBO or energy mode
+        architecture = [W, B, C]
+    
+    return architecture, params
+
 def compile_pubo(config: t.Dict, params: t.Dict) -> t.List[np.ndarray]:
     """
     Generates tensors for PUBO energy associated with a k-SAT problem specified in `config["instance"]`.
