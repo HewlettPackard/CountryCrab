@@ -553,6 +553,9 @@ def memHNN(architecture, config, params):
     # Get operation mode
     mode = config.get("mode", "QUBO")
     
+    # Get representation mode (binary or spin)
+    representation = config.get("representation", "binary")  # Choose between "binary" (0,1) or "spin" (-1,1)
+    
     # Get QUBO parameters from architecture - ensure all are CuPy arrays
     W = cp.asarray(architecture[0], dtype=cp.float32)  # Weight matrix
     B = cp.asarray(architecture[1], dtype=cp.float32)  # Linear terms
@@ -584,11 +587,13 @@ def memHNN(architecture, config, params):
     # Problem dimensions
     variables = W.shape[0]
     
-    # Initialize random spins (-1 or +1)
-    spin_inputs = 2 * cp.random.randint(2, size=(max_runs, variables)).astype(cp.float32) - 1
-    
-    # Convert to binary inputs for k-SAT mode
-    binary_inputs = (spin_inputs + 1) / 2
+    # Initialize inputs based on chosen representation
+    if representation == "spin":
+        # Initialize random spins (-1 or +1)
+        inputs = 2 * cp.random.randint(2, size=(max_runs, variables)).astype(cp.float32) - 1
+    else:  # binary representation
+        # Initialize random binary values (0 or 1)
+        inputs = cp.random.randint(2, size=(max_runs, variables)).astype(cp.float32)
     
     # Track violated constraints
     violated_constr_mat = cp.full((max_runs, max_flips), cp.nan, dtype=cp.float32)
@@ -596,8 +601,11 @@ def memHNN(architecture, config, params):
     n_iters = 0
     current_iter = 0
     
-    # Calculate initial energy
-    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+    # Calculate initial energy based on representation
+    if representation == "spin":
+        energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
+    else:  # binary representation
+        energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
     
     # Calculate number of temperature steps based on update mode
     if update_mode == "sequential" or update_mode == "random":
@@ -637,7 +645,7 @@ def memHNN(architecture, config, params):
                 # Efficiently compute local field for just this variable
                 local_field = cp.zeros((max_runs,), dtype=cp.float32)
                 for j in range(variables):
-                    local_field += W[var_idx, j] * spin_inputs[:, j]
+                    local_field += W[var_idx, j] * inputs[:, j]
                 local_field += B[var_idx]
                 
                 # Add noise based on selected distribution
@@ -652,22 +660,30 @@ def memHNN(architecture, config, params):
                 else:
                     noisy_field = local_field
                 
-                # Compute new spin value based on threshold
-                new_spin = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                # Compute new value based on threshold and representation
+                if representation == "spin":
+                    new_value = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                else:  # binary representation
+                    new_value = (noisy_field >= threshold).astype(cp.float32)
                 
-                # Update spin
-                spin_inputs[:, var_idx] = new_spin
-                binary_inputs = (spin_inputs + 1) / 2
+                # Update variable
+                inputs[:, var_idx] = new_value
                 
                 # Calculate violated constraints based on mode
                 if mode == "k-SAT":
                     # Use TCAM matching to compute violated constraints
-                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    if representation == "spin":
+                        # Convert to binary for TCAM matching if using spin representation
+                        binary_inputs = (inputs + 1) / 2
+                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
+                    else:  # binary representation
+                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
+                    
                     make_values = violated_clauses @ ram
                     violated_constr = cp.sum(make_values > 0, axis=1)
                 else:  # QUBO or energy mode
                     # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
                     violated_constr = cp.round(energy).astype(cp.int32)
                 
                 violated_constr_mat[:, current_iter] = violated_constr
@@ -690,7 +706,7 @@ def memHNN(architecture, config, params):
                 # Efficiently compute local field for just this variable
                 local_field = cp.zeros((max_runs,), dtype=cp.float32)
                 for j in range(variables):
-                    local_field += W[var_idx, j] * spin_inputs[:, j]
+                    local_field += W[var_idx, j] * inputs[:, j]
                 local_field += B[var_idx]
                 
                 # Add noise based on selected distribution
@@ -705,22 +721,30 @@ def memHNN(architecture, config, params):
                 else:
                     noisy_field = local_field
                 
-                # Compute new spin value based on threshold
-                new_spin = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                # Compute new value based on threshold and representation
+                if representation == "spin":
+                    new_value = 2 * (noisy_field >= threshold).astype(cp.float32) - 1
+                else:  # binary representation
+                    new_value = (noisy_field >= threshold).astype(cp.float32)
                 
-                # Update spin
-                spin_inputs[:, var_idx] = new_spin
-                binary_inputs = (spin_inputs + 1) / 2
+                # Update variable
+                inputs[:, var_idx] = new_value
                 
                 # Calculate violated constraints based on mode
                 if mode == "k-SAT":
                     # Use TCAM matching to compute violated constraints
-                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    if representation == "spin":
+                        # Convert to binary for TCAM matching if using spin representation
+                        binary_inputs = (inputs + 1) / 2
+                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
+                    else:  # binary representation
+                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
+                    
                     make_values = violated_clauses @ ram
                     violated_constr = cp.sum(make_values > 0, axis=1)
                 else:  # QUBO or energy mode
                     # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
                     violated_constr = cp.round(energy).astype(cp.int32)
                 
                 violated_constr_mat[:, current_iter] = violated_constr
@@ -752,8 +776,8 @@ def memHNN(architecture, config, params):
                 
                 # Efficient batch computation of local fields for the group
                 for idx, var_idx in enumerate(group_indices):
-                    local_fields[:, idx] = cp.sum(W[var_idx, :] * spin_inputs, axis=1) + B[var_idx]
-                
+                    local_fields[:, idx] = cp.sum(W[var_idx, :] * inputs, axis=1) + B[var_idx]
+
                 # Add noise based on selected distribution
                 if noise_dist == 'normal':
                     noisy_fields = local_fields + current_noise * cp.random.randn(*local_fields.shape)
@@ -766,25 +790,31 @@ def memHNN(architecture, config, params):
                 else:
                     noisy_fields = local_fields
                 
-                # Compute new spin values based on threshold
-                new_spins = 2 * (noisy_fields >= threshold).astype(cp.float32) - 1
+                # Compute new values based on threshold and representation
+                if representation == "spin":
+                    new_values = 2 * (noisy_fields >= threshold).astype(cp.float32) - 1
+                else:  # binary representation
+                    new_values = (noisy_fields >= threshold).astype(cp.float32)
                 
-                # Update spins for all variables in this group
+                # Update values for all variables in this group
                 for idx, var_idx in enumerate(group_indices):
-                    spin_inputs[:, var_idx] = new_spins[:, idx]
-                
-                # Update binary inputs for k-SAT mode
-                binary_inputs = (spin_inputs + 1) / 2
+                    inputs[:, var_idx] = new_values[:, idx]
                 
                 # Calculate violated constraints based on mode
                 if mode == "k-SAT":
                     # Use TCAM matching to compute violated constraints
-                    violated_clauses = campie.tcam_match(binary_inputs[:,0:n_vars], tcam)
+                    if representation == "spin":
+                        # Convert to binary for TCAM matching if using spin representation
+                        binary_inputs = (inputs + 1) / 2
+                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
+                    else:  # binary representation
+                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
+                    
                     make_values = violated_clauses @ ram
                     violated_constr = cp.sum(make_values > 0, axis=1)
                 else:  # QUBO or energy mode
                     # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(spin_inputs * (spin_inputs @ W), axis=1) - cp.sum(B * spin_inputs, axis=1) - C
+                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
                     violated_constr = cp.round(energy).astype(cp.int32)
                 
                 violated_constr_mat[:, current_iter] = violated_constr
@@ -795,13 +825,13 @@ def memHNN(architecture, config, params):
                 
                 current_iter += 1
                 n_iters += 1
-        
     
-    # Final binary inputs for return value
-    inputs = (spin_inputs + 1) / 2
+    # If returning from spin representation and we need binary outputs for consistency
+    if representation == "spin" and config.get("return_binary", False):
+        inputs = (inputs + 1) / 2
     
     # Calculate timing information
     iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
     
-    # Keep results in CuPy until the end
+    # Return results
     return violated_constr_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]
