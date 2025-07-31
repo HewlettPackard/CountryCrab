@@ -6,6 +6,7 @@ CountryCrab was first used to benchmark Content Addressable Memories approaches 
 
 ## Setting up the Jupyter Docker container
 
+It is reccommended to use CountryCrab in the provided container.
 The `dockerctl` script provides options to control building and running the image.
 Running can be done in two modes:
 - **lab**: (default) launches Jupyter Lab inside the container.
@@ -32,7 +33,7 @@ After the container starts:
 
 ## Installing CountryCrab
 
-After running Docker to install the CountryCrab package run
+In the case the container is not used, to install the CountryCrab package run
 ```sh
 pip install -e .
 ```

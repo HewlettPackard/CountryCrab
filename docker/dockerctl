@@ -113,6 +113,7 @@ run() {
 
         docker exec "$container_id" chown -R "$USER" "$HOME"
         docker exec "$container_id" sh -c "chown '$USER' /etc/certs/*"
+		docker exec -u "$USER" -w "$mount_directory" "$container_id" pip install -e .
 
         echo "Enter your desired Jupyter Lab password below:"
         docker exec -u "$USER" -it "$container_id" jupyter lab password
@@ -148,6 +149,7 @@ run() {
         # shell mode: disable ERR trap so `exit` won't trigger error handler
         trap "" ERR
         docker exec "$container_id" chown -R "$USER" "$HOME"
+		docker exec -u "$USER" -w "$mount_directory" "$container_id" pip install -e .
         log_info "Dropping into shell..."
         docker exec -u "$USER" -it -w "$mount_directory" "$container_id" /bin/bash
         log_info "Shell session ended, cleaning up container..."
