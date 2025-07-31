@@ -8,31 +8,30 @@ ENV HTTP_PROXY ${PROXY}
 ENV HTTPS_PROXY ${PROXY}
 
 RUN if [ "$http_proxy" != "" ]; then \
-  echo "Acquire::http::Proxy \"$http_proxy\";" >> /etc/apt/apt.conf; \
-  fi
+      echo "Acquire::http::Proxy \"$http_proxy\";" >> /etc/apt/apt.conf; \
+    fi
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get install -y python3 python3-pip
-
 
 # create the actual development container
 FROM ubuntu-cuda-python AS final
 
 # set up sudo
-RUN apt-get install -y sudo
-RUN groupadd -r wheel
-RUN echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
+RUN apt-get install -y sudo \
+ && groupadd -r wheel \
+ && echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel
 
 # additional packages
 RUN apt-get install -y \
-  curl \
-  wget \
-  git \
-  gh \
-  build-essential \
-  gcc \
-  g++ \
-  locales
+      curl \
+      wget \
+      git \
+      gh \
+      build-essential \
+      gcc \
+      g++ \
+      locales
 
 WORKDIR /tmp
 
@@ -48,17 +47,22 @@ WORKDIR /etc/jupyter
 COPY docker/jupyter/jupyter_lab_config.py .
 
 WORKDIR /etc/certs
-RUN openssl genpkey -algorithm RSA -out jupyter.key
-RUN openssl req -new -key jupyter.key -out jupyter.csr -subj "/CN=localhost"
-RUN openssl x509 -req -days 365 -in jupyter.csr -signkey jupyter.key -out jupyter.crt
+RUN openssl genpkey -algorithm RSA -out jupyter.key \
+ && openssl req -new -key jupyter.key -out jupyter.csr -subj "/CN=localhost" \
+ && openssl x509 -req -days 365 -in jupyter.csr -signkey jupyter.key -out jupyter.crt
 
 # store user settings here, `dockerctl` can later move them to the correct user's home
 COPY docker/jupyter/settings /var/jupyter-settings
 
 WORKDIR /
 
-# this is kind of like a no-op that just keeps the container running.
-# this way, `docker exec` can later be used to start something like
-# jupyter lab in a more flexible way, i.e. we can choose the user
-# that runs jupyter at runtime
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+# ───────────────────────────────────────────────────────────────
+# NEW: copy in our entrypoint and make it the default
+# ───────────────────────────────────────────────────────────────
+# (You’ll create this script at docker/docker-entrypoint.sh)
+COPY docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# Default to "lab" mode; override by passing "shell" (or any other cmd)
+CMD ["lab"]
