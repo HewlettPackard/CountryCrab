@@ -575,6 +575,11 @@ def memHNN(architecture, config, params):
     
     # Get configuration parameters
     initial_noise = config.get("noise", 0.8)  # Initial noise level
+    # Initial noise should be multiplied by the maximum gradient value which is equal to the maximum sum of positive or absolute negative values of each column
+    col_pos = cp.sum(cp.where(W > 0, W, 0), axis=0)
+    col_neg = cp.sum(cp.where(W < 0, -W, 0), axis=0)
+    max_gradient = cp.max(cp.maximum(col_pos, col_neg))
+    initial_noise *= max_gradient
     final_noise = config.get("final_noise", 0.0)  # Final noise level
     threshold = config.get("threshold", 0.0)  # Decision threshold
     
