@@ -55,103 +55,114 @@ build() {
 }
 
 run() {
-	image_name="$1"
-	port="$2"
-	container_name="$3"
-	mount_directory="$4"
+    image_name="$1"
+    port="$2"
+    mode="$3"
+    mount_directory="$4"
+    container_name="$5"
 
-	[ -z "$image_name" ] && log_fatal "Missing argument <image name>"
+    [ -z "$image_name" ] && log_fatal "Missing argument <image name>"
 
-	[ -z "$port" ] && \
-		log_info "No port set, using default port 8888" && \
-		port="8888"
+    [ -z "$port" ] && {
+        log_info "No port set, using default port 8888"
+        port="8888"
+    }
 
-	[ -z "$container_name" ] && \
-		log_info "No container name set, defaulting to \"$(basename "$repo_root")-$USER\"" && \
-		container_name="$(basename "$repo_root")-$USER"
+	[ -z "$mode" ] && mode="lab"
+    case "$mode" in
+        lab|shell) ;;
+        *) log_fatal "Invalid mode: \"$mode\". Supported modes are 'lab' or 'shell'" ;;
+    esac
 
-	[ -z "$mount_directory" ] &&  \
-		log_info "No mount directory set, using repository root at \"$repo_root\"" && \
-		mount_directory="$repo_root"
+    [ -z "$container_name" ] && {
+        log_info "No container name set, defaulting to \"$(basename "$repo_root")-$USER\""
+        container_name="$(basename "$repo_root")-$USER"
+    }
 
-	log_info "Starting container..."
-	container_id=$(docker run -d --init --rm --gpus all \
-		--name "$container_name" \
-		--hostname "$(basename "$repo_root")-container" \
-		-p "$port:$port" \
-		-v "$mount_directory:$mount_directory" \
-		"$image_name")
+    [ -z "$mount_directory" ] && {
+        log_info "No mount directory set, using repository root at \"$repo_root\""
+        mount_directory="$repo_root"
+    }
 
-	# make sure the container gets cleaned up in case anything
-	# goes wrong from here on
-	trap 'log_error "Error encountered, killing container..." && \
-		docker kill "$container_id" > /dev/null' ERR
+    log_info "Starting container in '$mode' mode..."
+    container_id=$(docker run -d --init --rm \
+        --name "$container_name" \
+        --hostname "$(basename "$repo_root")-container" \
+        -p "$port:$port" \
+        -v "$mount_directory:$mount_directory" \
+        --gpus all \
+        "$image_name")
 
-	log_info "Started container $container_id"
+    # ensure cleanup on error
+    trap 'log_error "Error encountered, killing container..." && docker kill "$container_id" > /dev/null' ERR
 
-	uid=$(id "$USER" | awk -F'[=()]' '{print $2}')
-	gid=$(id "$USER" | awk -F'[=()]' '{print $5}')
+    log_info "Started container $container_id"
 
-	docker exec "$container_id" mkdir -p "$HOME"
+    uid=$(id "$USER" | awk -F'[=()]' '{print $2}')
+    gid=$(id "$USER" | awk -F'[=()]' '{print $5}')
 
-	docker exec "$container_id" \
-		groupadd -g "$gid" "$USER" 2> /dev/null || true
-	docker exec "$container_id" \
-		useradd -u "$uid" -g "$gid" -G wheel -m -s /bin/bash "$USER" 2> /dev/null || true
+    docker exec "$container_id" mkdir -p "$HOME"
+    docker exec "$container_id" groupadd -g "$gid" "$USER" 2> /dev/null || true
+    docker exec "$container_id" useradd -u "$uid" -g "$gid" -G wheel -m -s /bin/bash "$USER" 2> /dev/null || true
 
-	log_info "Created user $USER with uid $uid and gid $gid"
+    if [ "$mode" = "lab" ]; then
+        # Setup Jupyter Lab
+        docker exec "$container_id" mkdir -p "$HOME/.jupyter/lab/user-settings/@jupyterlab"
+        docker exec "$container_id" sh -c "mv /var/jupyter-settings/* $HOME/.jupyter/lab/user-settings/@jupyterlab"
+        log_info "Installed Jupyter settings"
 
-	docker exec "$container_id" mkdir -p "$HOME/.jupyter/lab/user-settings/@jupyterlab"
-	docker exec "$container_id" sh -c "mv /var/jupyter-settings/* $HOME/.jupyter/lab/user-settings/@jupyterlab"
-	log_info "Installed Jupyter settings"
+        docker exec "$container_id" chown -R "$USER" "$HOME"
+        docker exec "$container_id" sh -c "chown '$USER' /etc/certs/*"
 
-	docker exec "$container_id" chown -R "$USER" "$HOME"
-	docker exec "$container_id" sh -c "chown '$USER' /etc/certs/*"
+        echo "Enter your desired Jupyter Lab password below:"
+        docker exec -u "$USER" -it "$container_id" jupyter lab password
 
-	echo "Enter your desired Jupyter Lab password below:"
-	docker exec -u "$USER" -it "$container_id" jupyter lab password
+        log_info "Starting Jupyter Lab..."
+        docker exec -u "$USER" -it -d -w "$mount_directory" "$container_id" \
+            jupyter lab --ServerApp.port="$port"
 
-	log_info "Starting Jupyter Lab..."
-	docker exec -u "$USER" -it -d -w "$mount_directory" "$container_id" \
-		jupyter lab --ServerApp.port="$port"
+        # remove previous error handler
+        trap "" ERR
 
-	# remove previous error handler
-	trap "" ERR
+        # handle Ctrl-C to clean up
+        trap 'log_info "Cleaning up container..." && docker kill "$container_id" > /dev/null && exit 0' INT
 
-	# set new error handler for interrupts (i.e. Ctrl-C)
-	trap 'log_info "Cleaning up container..." && \
-		docker kill "$container_id" > /dev/null && \
-		exit 0' INT
+        log_info "Connect directly: (some of the addresses below might not be reachable)"
+        for host in $(hostname -I) $(hostname -A); do
+            if [[ "$host" != *.* || "$host" = 127.* || "$host" = 172.* ]]; then
+                continue
+            fi
+            log_info "    https://$host:$port"
+        done
+        log_info "Connect with SSH forwarding or to a local instance:"
+        log_info "    https://127.0.0.1:$port"
+        log_info "To forward SSH: \"ssh -L $port:localhost:$port <host>\""
 
-	log_info "Connect directly: (some of the addresses below might not be reachable)"
+        log_info "Press Ctrl-C to stop the container"
 
-	# this is best-effort guessing of which ip addresses and hostnames
-	# are externally reachable
-	for host in $(hostname -I) $(hostname -A); do
-		# filter out hostnames without a dot, just as docker and loopback ips
-		if [[ "$host" != *.* || "$host" = 127.* || "$host" = 172.* ]]; then
-			continue
-		fi	
-		log_info "	https://$host:$port"
-	done
-
-	log_info "Connect with SSH forwarding or to a local instance:"
-	log_info "	https://127.0.0.1:$port"
-	log_info "To forward SSH: \"ssh -L $port:localhost:$port <host>\""
-
-	log_info "Press Ctrl-C to stop the container"
-
-	# wait for interrupt to trigger container cleanup
-	while true; do sleep 1000 ; done
+        # wait for interrupt
+        while true; do sleep 1000; done
+    else
+        # shell mode
+        # shell mode: ensure user owns their home directory for pip, etc.
+        # shell mode: disable ERR trap so `exit` won't trigger error handler
+        trap "" ERR
+        docker exec "$container_id" chown -R "$USER" "$HOME"
+        log_info "Dropping into shell..."
+        docker exec -u "$USER" -it -w "$mount_directory" "$container_id" /bin/bash
+        log_info "Shell session ended, cleaning up container..."
+        docker kill "$container_id" > /dev/null
+        exit 0
+    fi
 }
 
 case "$1" in
-	build) shift && build "$@" ;;
-	run) shift && run "$@" ;;
-	help) help ;;
-	*)
-		[ -n "$1" ] && log_error "Command not found: \"$1\""
-		help
-		exit 1
-		;;
+    build) shift && build "$@" ;;
+    run)   shift && run "$@" ;;
+    help)  help ;;
+    *)
+        [ -n "$1" ] && log_error "Command not found: \"$1\""
+        help
+        exit 1
+        ;;
 esac

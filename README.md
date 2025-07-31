@@ -7,24 +7,29 @@ CountryCrab was first used to benchmark Content Addressable Memories approaches 
 ## Setting up the Jupyter Docker container
 
 The `dockerctl` script provides options to control building and running the image.
-Usage is demonstrated below:
+Running can be done in two modes:
+- **lab**: (default) launches Jupyter Lab inside the container.
+- **shell**: drops you into an interactive shell session without starting Jupyter.
+Usage examples (from the `docker` directory):
 
 ```sh
-cd docker
-
-# this builds an image tagged `camsat`
+# build an image tagged `countrycrab`
 ./dockerctl build countrycrab
 
-# start Jupyter lab on a port of your choice
-./dockerctl run countrycrab <port>
-```
+# launch Jupyter Lab on port 8888 (default)
+./dockerctl run countrycrab
 
-The terminal output will then instruct you how to connect to the running instance.
+# launch Jupyter Lab on a custom port (e.g. 9999)
+./dockerctl run countrycrab 9999
 
-After connecting to the Jupyter Lab instance for a better shell UX (full shell prompt and other interactive features) run
-```sh
-exec bash
+# drop into a shell session instead of launching Jupyter Lab
+./dockerctl run countrycrab <port> shell
 ```
+After the container starts:
+
+- In **lab** mode, you’ll be prompted to set a Jupyter Lab password, and the script will print connection URLs.
+- In **shell** mode, you get a full-featured bash prompt inside the container. When you’re done, type `exit` (or press Ctrl-D) to end the session and automatically clean up the container.
+
 ## Installing CountryCrab
 
 After running Docker to install the CountryCrab package run
