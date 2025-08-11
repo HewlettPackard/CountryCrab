@@ -809,23 +809,22 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
     
     # Get operation mode
     mode = config.get("mode", "QUBO")
-    
+    # TODO, currently the way to get the violated constraints matrix and the mapping are both passed as "mode" but these are two different things
+    if mode == 'k-SAT':
     # Get QUBO mapping parameters from config
-    mapping_type = config.get("mapping_type", "clause_wise")
-    mapping_name = config.get("mapping_name", "Rosenberg")
+        mapping_type = config.get("mapping_type", "clause_wise")
+        mapping_name = config.get("mapping_name", "Rosenberg")
+        
+        # Update config with mapping parameters if not already present
+        if "mapping_type" not in config:
+            config["mapping_type"] = mapping_type
+        if "mapping_name" not in config:
+            config["mapping_name"] = mapping_name
+        
+        # Extract QUBO coefficients from the CNF file
+        W, B, C = qubo_sat_map(config)
     
-    # Update config with mapping parameters if not already present
-    if "mapping_type" not in config:
-        config["mapping_type"] = mapping_type
-    if "mapping_name" not in config:
-        config["mapping_name"] = mapping_name
-    
-    # Extract QUBO coefficients from the CNF file
-    W, B, C = qubo_sat_map(config)
-    
-    # Store problem dimensions in params
-    variables = W.shape[0]
-    params['variables'] = variables
+
     
     if mode == "k-SAT":
         # Also compile TCAM/RAM matrices like in MNSAT
@@ -838,52 +837,63 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         ram = mnsat_architecture[1]
         
         architecture = [W, B, C, tcam, ram]
-    else:
+    elif mode == 'MIMO':
         # QUBO or energy mode
+        W, transmitted_bits = qubo_mimo_map(config["instance"])
+        params['transmitted_bits'] = transmitted_bits
+        B = np.zeros(W.shape[0])
+        C = np.zeros(1)
         architecture = [W, B, C]
+    else:
+        raise ValueError("Unsupported mode. Choose either 'k-SAT' or 'MIMO'.")
     
+    # Store problem dimensions in params
+    variables = W.shape[0]
+    params['variables'] = variables
     return architecture, params
 
-def compile_pubo(config: t.Dict, params: t.Dict) -> t.List[np.ndarray]:
+
+
+def qubo_mimo_map(file_path):
     """
-    Generates tensors for PUBO energy associated with a k-SAT problem specified in `config["instance"]`.
+    Extract the coupling matrix W from a MIMO QUBO file.
+    
+    Parameters:
+    file_path (str): Path to the QUBO file
+    
+    Returns:
+    numpy.ndarray: The coupling matrix W
+    int: Number of variables
+    str: Transmitted bits
     """
-
-    instance_name = config["instance"]
-    clauses = load_clauses_from_cnf(instance_name)
-
-
-    N = np.max(np.abs(np.concatenate(clauses)))
-    K_max = max(len(c) for c in clauses)
-
-    tensors = [np.zeros([N] * k) for k in range(K_max+1)]
-
-    for k in range(K_max+1):
-        for clause in map(np.asarray, filter(lambda c: k <= len(c), clauses)): # type: ignore
-            K_clause = len(clause)
-
-            clause *= -1  # Invert the clauses to express as energy minimization problem
-
-            lits_idx = np.abs(clause) - 1
-
-            sorting_idx = np.argsort(lits_idx)
-            clause, lits_idx = clause[sorting_idx], lits_idx[sorting_idx]
-
-            for comb in itertools.combinations(range(K_clause), k): # type: ignore
-                complementary_comb = list(set(range(K_clause)).difference(comb))
-
-                comb = np.asarray(comb, dtype=np.int32)
-                complementary_comb = np.asarray(complementary_comb, dtype=np.int32)
-
-                tensors[k][tuple(lits_idx[comb])] += (
-                    np.sign(np.prod(clause[comb]))
-                    * (np.prod(clause[complementary_comb] < 0))
-                )
-
-        # Symetrize tensors of rank > 1
-        if k > 1:
-            perms = list(itertools.permutations(range(k)))     
-            tensors[k] = np.sum([tensors[k].transpose(perm) for perm in perms], axis=0) / len(perms)
-            
-
-    return tensors
+    with open(file_path, 'r') as f:
+        lines = f.readlines()
+    
+    # Get the number of variables
+    num_variables = int(lines[0].strip())
+    
+    # Get the transmitted bits
+    transmitted_bits = lines[1].strip()
+    
+    # Initialize the coupling matrix with zeros
+    W = np.zeros((num_variables, num_variables))
+    
+    # Process the QUBO terms (starting from line 3)
+    for line in lines[2:]:
+        # Split the line into tokens and convert to appropriate types
+        tokens = line.strip().split()
+        
+        if len(tokens) == 2:
+            # Diagonal term: i value
+            i = int(tokens[0])
+            value = float(tokens[1])
+            W[i, i] = value
+        elif len(tokens) == 3:
+            # Off-diagonal term: i j value
+            i = int(tokens[0])
+            j = int(tokens[1])
+            value = float(tokens[2])
+            W[i, j] = value
+            W[j, i] = value  # Ensure symmetry for QUBO matrix
+    
+    return W, transmitted_bits
