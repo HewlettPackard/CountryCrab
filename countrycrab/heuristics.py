@@ -690,12 +690,13 @@ def memHNN(architecture, config, params):
                     # Calculate energy using QUBO formulation
                     energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
                     violated_constr = cp.round(energy).astype(cp.int32)
-                
+                # TODO it would be cleaner if this is called in general "tracked_metrics", in case of SAT this is the number of violated clauses, in general, this is the energy
                 violated_constr_mat[:, current_iter] = violated_constr
                 
                 # Early stopping if solution found
-                if cp.all(violated_constr == 0):
-                    break
+                if mode == "k-SAT":
+                    if cp.all(violated_constr == 0):
+                        break
                 
                 current_iter += 1
                 n_iters += 1
@@ -755,8 +756,9 @@ def memHNN(architecture, config, params):
                 violated_constr_mat[:, current_iter] = violated_constr
                 
                 # Early stopping if solution found
-                if cp.all(violated_constr == 0):
-                    break
+                if mode == "k-SAT":
+                    if cp.all(violated_constr == 0):
+                        break
                 
                 current_iter += 1
                 n_iters += 1
@@ -825,8 +827,9 @@ def memHNN(architecture, config, params):
                 violated_constr_mat[:, current_iter] = violated_constr
                 
                 # Early stopping if solution found
-                if cp.all(violated_constr == 0):
-                    break
+                if mode == "k-SAT":
+                    if cp.all(violated_constr == 0):
+                        break
                 
                 current_iter += 1
                 n_iters += 1
