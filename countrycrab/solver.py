@@ -223,7 +223,8 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
             best_max_flips = np.where(mean_energy == mean_energy[argbest_energy])
             return {
                 "energy": mean_energy[argbest_energy],
-                "max_flips_opt": best_max_flips[0][0]
+                "max_flips_opt": best_max_flips[0][0],
+                "best_energy": np.min(cp.asnumpy(violated_constr_mat))
             }
             
 

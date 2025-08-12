@@ -547,9 +547,7 @@ def memHNN(architecture, config, params):
         n_iters: Number of completed iterations
         inputs: Final state of variables
         iterations_timepoints: Timing information
-    """
-    import math
-    
+    """    
     # Get operation mode
     mode = config.get("mode", "QUBO")
     
@@ -602,7 +600,11 @@ def memHNN(architecture, config, params):
     
     # Track violated constraints
     violated_constr_mat = cp.full((max_runs, max_flips), cp.nan, dtype=cp.float32)
-    
+
+    # Track the current best solution
+    best_solution = cp.copy(inputs)
+    best_violated_constr = cp.full(max_runs, cp.inf, dtype=cp.float32)
+
     n_iters = 0
     current_iter = 0
     
@@ -644,8 +646,6 @@ def memHNN(architecture, config, params):
         if update_mode == "sequential":
             # Update variables one by one in sequential order
             for var_idx in range(variables):
-                if current_iter >= max_flips:
-                    break
                 
                 # Efficiently compute local field for just this variable
                 local_field = cp.zeros((max_runs,), dtype=cp.float32)
@@ -674,40 +674,12 @@ def memHNN(architecture, config, params):
                 # Update variable
                 inputs[:, var_idx] = new_value
                 
-                # Calculate violated constraints based on mode
-                if mode == "k-SAT":
-                    # Use TCAM matching to compute violated constraints
-                    if representation == "spin":
-                        # Convert to binary for TCAM matching if using spin representation
-                        binary_inputs = (inputs + 1) / 2
-                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
-                    else:  # binary representation
-                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
-                    
-                    make_values = violated_clauses @ ram
-                    violated_constr = cp.sum(make_values > 0, axis=1)
-                else:  # QUBO or energy mode
-                    # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
-                    violated_constr = cp.round(energy).astype(cp.int32)
-                # TODO it would be cleaner if this is called in general "tracked_metrics", in case of SAT this is the number of violated clauses, in general, this is the energy
-                violated_constr_mat[:, current_iter] = violated_constr
-                
-                # Early stopping if solution found
-                if mode == "k-SAT":
-                    if cp.all(violated_constr == 0):
-                        break
-                
-                current_iter += 1
-                n_iters += 1
                 
         elif update_mode == "random":
             # Update variables one by one in random order
             var_indices = cp.random.permutation(variables)
             
             for var_idx in var_indices:
-                if current_iter >= max_flips:
-                    break
                 
                 # Efficiently compute local field for just this variable
                 local_field = cp.zeros((max_runs,), dtype=cp.float32)
@@ -736,32 +708,6 @@ def memHNN(architecture, config, params):
                 # Update variable
                 inputs[:, var_idx] = new_value
                 
-                # Calculate violated constraints based on mode
-                if mode == "k-SAT":
-                    # Use TCAM matching to compute violated constraints
-                    if representation == "spin":
-                        # Convert to binary for TCAM matching if using spin representation
-                        binary_inputs = (inputs + 1) / 2
-                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
-                    else:  # binary representation
-                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
-                    
-                    make_values = violated_clauses @ ram
-                    violated_constr = cp.sum(make_values > 0, axis=1)
-                else:  # QUBO or energy mode
-                    # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
-                    violated_constr = cp.round(energy).astype(cp.int32)
-                
-                violated_constr_mat[:, current_iter] = violated_constr
-                
-                # Early stopping if solution found
-                if mode == "k-SAT":
-                    if cp.all(violated_constr == 0):
-                        break
-                
-                current_iter += 1
-                n_iters += 1
 
         elif update_mode == "stochastic_group":
             # Randomly assign each variable to one of num_groups groups
@@ -769,9 +715,6 @@ def memHNN(architecture, config, params):
             
             # Process each group
             for group_id in range(num_groups):
-                if current_iter >= max_flips:
-                    break
-                
                 # Get indices of variables assigned to this group
                 group_indices = cp.where(group_assignments == group_id)[0]
                 
@@ -807,32 +750,32 @@ def memHNN(architecture, config, params):
                 for idx, var_idx in enumerate(group_indices):
                     inputs[:, var_idx] = new_values[:, idx]
                 
-                # Calculate violated constraints based on mode
-                if mode == "k-SAT":
-                    # Use TCAM matching to compute violated constraints
-                    if representation == "spin":
-                        # Convert to binary for TCAM matching if using spin representation
-                        binary_inputs = (inputs + 1) / 2
-                        violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
-                    else:  # binary representation
-                        violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
-                    
-                    make_values = violated_clauses @ ram
-                    violated_constr = cp.sum(make_values > 0, axis=1)
-                else:  # QUBO or energy mode
-                    # Calculate energy using QUBO formulation
-                    energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
-                    violated_constr = cp.round(energy).astype(cp.int32)
-                
-                violated_constr_mat[:, current_iter] = violated_constr
-                
-                # Early stopping if solution found
-                if mode == "k-SAT":
-                    if cp.all(violated_constr == 0):
-                        break
-                
-                current_iter += 1
-                n_iters += 1
+        # Calculate violated constraints based on mode
+        if mode == "k-SAT":
+            # Use TCAM matching to compute violated constraints
+            if representation == "spin":
+                # Convert to binary for TCAM matching if using spin representation
+                binary_inputs = (inputs + 1) / 2
+                violated_clauses = campie.tcam_match(1-binary_inputs[:,0:n_vars], tcam)
+            else:  # binary representation
+                violated_clauses = campie.tcam_match(1-inputs[:,0:n_vars], tcam)
+            
+            make_values = violated_clauses @ ram
+            violated_constr = cp.sum(make_values > 0, axis=1)
+        else:  # QUBO or energy mode
+            # Calculate energy using QUBO formulation
+            energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
+            violated_constr = cp.round(energy).astype(cp.int32)
+        
+        violated_constr_mat[:, current_iter] = violated_constr
+        
+        # Early stopping if solution found
+        if mode == "k-SAT":
+            if cp.all(violated_constr == 0):
+                break
+        
+        current_iter += 1
+        n_iters += 1
     
     # If returning from spin representation and we need binary outputs for consistency
     if representation == "spin" and config.get("return_binary", False):
@@ -840,6 +783,10 @@ def memHNN(architecture, config, params):
     
     # Calculate timing information
     iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
-    
+
+    # get overall best solution (when violated constraints are minimal)
+    overall_best_violated_constr = cp.min(best_violated_constr)
+    overall_best_solution = best_solution[cp.where(best_violated_constr == overall_best_violated_constr)[0]]
+
     # Return results
     return violated_constr_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]
