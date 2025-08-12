@@ -603,7 +603,7 @@ def memHNN(architecture, config, params):
 
     # Track the current best solution
     best_solution = cp.copy(inputs)
-    best_violated_constr = cp.full(max_runs, cp.inf, dtype=cp.float32)
+    best_metric = cp.full(max_runs, cp.inf, dtype=cp.float32)
 
     n_iters = 0
     current_iter = 0
@@ -764,13 +764,25 @@ def memHNN(architecture, config, params):
             violated_constr = cp.sum(make_values > 0, axis=1)
             metric_tracking_mat[:, current_iter] = violated_constr
 
+            # Update best solution if current energy is better
+            better_indices = cp.where(energy < best_metric)[0]
+            if better_indices.size > 0:
+                best_metric[better_indices] = energy[better_indices]
+                best_solution[better_indices] = inputs[better_indices]
+
             if cp.all(violated_constr == 0):
                 break
         else:  # QUBO or energy mode
             # Calculate energy using QUBO formulation
             energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
             metric_tracking_mat[:, current_iter] = (energy).astype(cp.int32)
-            # keep track of best solution
+            # Update best solution if current energy is better
+            better_indices = cp.where(energy < best_metric)[0]
+            if better_indices.size > 0:
+                best_metric[better_indices] = energy[better_indices]
+                best_solution[better_indices] = inputs[better_indices]
+
+
 
         current_iter += 1
         n_iters += 1
@@ -783,8 +795,8 @@ def memHNN(architecture, config, params):
     iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
 
     # get overall best solution (when violated constraints are minimal)
-    overall_best_violated_constr = cp.min(best_violated_constr)
-    overall_best_solution = best_solution[cp.where(best_violated_constr == overall_best_violated_constr)[0]]
+    overall_best_metric = cp.min(best_metric)
+    overall_best_solution = best_solution[cp.argmin(best_metric)]
 
     # Return results
-    return metric_tracking_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]
+    return metric_tracking_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :], overall_best_solution,overall_best_metric
