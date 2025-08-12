@@ -90,7 +90,14 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")
 
     # call the heuristic function with the necessary arguments
-    violated_constr_mat, n_iters, inputs, iterations_timepoints = heuristic_function(architecture, config,params)
+    results = heuristic_function(architecture, config, params)
+    metric_tracking_mat = results[0]
+    n_iters = results[1]
+    inputs = results[2]
+    iterations_timepoints = results[3]
+    if len(results) > 4:
+        overall_best_solution = results[4]
+        overall_best_metric = results[5]
 
     # METRIC FUNCTIONS
     # target_probability
@@ -111,7 +118,7 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
 
     if metric == "its":
         # probability of solving the problem as a function of the iterations
-        p_vs_it = cp.sum(violated_constr_mat[:, :n_iters] == 0, axis=0) / max_runs
+        p_vs_it = cp.sum(metric_tracking_mat[:, :n_iters] == 0, axis=0) / max_runs
         # probability of solving the problem as a function of the time
         # Notes:
         #   For continuous-time solvers, the runs may have different time between all flips, because they occur asynchronously
@@ -161,14 +168,14 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
                     return {"its": np.nan, "tts": np.nan}
                 
             elif task == "debug":
-                return p_vs_it, cp.asnumpy(violated_constr_mat), cp.asnumpy(inputs), (ts, p_vs_t)
+                return p_vs_it, cp.asnumpy(metric_tracking_mat), cp.asnumpy(inputs), (ts, p_vs_t)
             else:
                 raise ValueError(f"Unknown task: {task}")
         
         elif metric_approach == "bayesian":
             try:
                 from countrycrab.metrics import vector_its_bayesian
-                its, its_err = vector_its_bayesian(cp.asnumpy(violated_constr_mat[:, 1 : n_iters + 1]), config)
+                its, its_err = vector_its_bayesian(cp.asnumpy(metric_tracking_mat[:, 1 : n_iters + 1]), config)
 
             except ImportError:
                 its = np.nan
@@ -182,7 +189,7 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
             # input is a matrix with the shape (max_runs, variables)
             if solved:
                 # Step 1: Find where violated_constr_mat is zero for each run
-                solved_runs = cp.where(violated_constr_mat[:, 1:n_iters+1] == 0)
+                solved_runs = cp.where(metric_tracking_mat[:, 1:n_iters+1] == 0)
                 solved_runs = solved_runs[0].get()  # Explicit conversion to NumPy array
                 inputs = cp.asnumpy(inputs)
                 # Step 2: Count the number of different solutions. 
@@ -218,13 +225,15 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         if task =='hpo':
             # we don't care about the actual results, we just want to return the energy
             # return the best (minimum) energy and the corresponding max_flips
-            mean_energy = np.mean(cp.asnumpy(violated_constr_mat), axis=0)
+            mean_energy = np.mean(cp.asnumpy(metric_tracking_mat), axis=0)
             argbest_energy = np.argmin(mean_energy)
             best_max_flips = np.where(mean_energy == mean_energy[argbest_energy])
             return {
                 "energy": mean_energy[argbest_energy],
                 "max_flips_opt": best_max_flips[0][0],
-                "best_energy": np.min(cp.asnumpy(violated_constr_mat))
+                "best_energy": np.min(cp.asnumpy(metric_tracking_mat)),
+                "best_solution": overall_best_solution if 'overall_best_solution' in locals() else None,
+                "best_metric": overall_best_metric if 'overall_best_metric' in locals() else None
             }
             
 
