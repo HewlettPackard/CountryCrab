@@ -599,7 +599,7 @@ def memHNN(architecture, config, params):
         inputs = cp.random.randint(2, size=(max_runs, variables)).astype(cp.float32)
     
     # Track violated constraints
-    violated_constr_mat = cp.full((max_runs, max_flips), cp.nan, dtype=cp.float32)
+    metric_tracking_mat = cp.full((max_runs, max_flips), cp.nan, dtype=cp.float32)
 
     # Track the current best solution
     best_solution = cp.copy(inputs)
@@ -762,18 +762,16 @@ def memHNN(architecture, config, params):
             
             make_values = violated_clauses @ ram
             violated_constr = cp.sum(make_values > 0, axis=1)
+            metric_tracking_mat[:, current_iter] = violated_constr
+
+            if cp.all(violated_constr == 0):
+                break
         else:  # QUBO or energy mode
             # Calculate energy using QUBO formulation
             energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
-            violated_constr = cp.round(energy).astype(cp.int32)
-        
-        violated_constr_mat[:, current_iter] = violated_constr
-        
-        # Early stopping if solution found
-        if mode == "k-SAT":
-            if cp.all(violated_constr == 0):
-                break
-        
+            metric_tracking_mat[:, current_iter] = (energy).astype(cp.int32)
+            # keep track of best solution
+
         current_iter += 1
         n_iters += 1
     
@@ -789,4 +787,4 @@ def memHNN(architecture, config, params):
     overall_best_solution = best_solution[cp.where(best_violated_constr == overall_best_violated_constr)[0]]
 
     # Return results
-    return violated_constr_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]
+    return metric_tracking_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :]
