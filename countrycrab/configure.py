@@ -20,7 +20,7 @@ import re
 def natural_keys(text):
     return [int(c) if c.isdigit() else c.lower() for c in re.split('(\d+)', text)]
 
-def split_hpo_test(instances_path_list, hpo_test = 0.2, max_instances = 100):
+def split_hpo_test(instances_path_list, hpo_test = 0.2, max_instances = 100,extension = '.cnf'):
     # this function load the isntances in the instances_path
     # split them in two dictionaries, one for hyperparameters optimization and one for testing
 
@@ -34,8 +34,8 @@ def split_hpo_test(instances_path_list, hpo_test = 0.2, max_instances = 100):
         all_files = sorted(os.listdir(instances_path))
         
         
-        # Filter out files with a .cnf extension 
-        cnf_files = [file for file in all_files if file.endswith('.cnf')]
+        # Filter out files with a the given extension extension 
+        cnf_files = [file for file in all_files if file.endswith(extension)]
 
         # sort them alphabetically
         cnf_files.sort(key=natural_keys)
