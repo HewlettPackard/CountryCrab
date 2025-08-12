@@ -49,6 +49,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     # heuristics specification
     heuristic_name = config.get("heuristic", 'MNSAT')
     compiler_name = config.get("compiler", 'compile_MNSAT')
+    # mode
+    mode = config.get("mode", "k-SAT")
 
     if task == 'hpo':
         # random sampling in case of hpo
@@ -74,6 +76,7 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
         "scheduling": scheduling,
         "metric": metric,
         "metric_approach": metric_approach,
+        "mode": mode,
     }
 
     # set resource per trial based on experiments. A high value is used to ensure that the experiment runs but it can be decreased to optimize the use of the GPU
@@ -95,7 +98,7 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
         ),
         # Tuning configuration.
         tune_config=tune.TuneConfig(
-            metric="its",
+            metric=metric,
             mode="min",
             num_samples=1, # TODO this has to be fixed together with the distribution choice above
         ),

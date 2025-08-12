@@ -218,13 +218,12 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         if task =='hpo':
             # we don't care about the actual results, we just want to return the energy
             # return the best (minimum) energy and the corresponding max_flips
-            mean_energy = np.mean(violated_constr_mat, axis=0)
+            mean_energy = np.mean(cp.asnumpy(violated_constr_mat), axis=0)
             argbest_energy = np.argmin(mean_energy)
             best_max_flips = np.where(mean_energy == mean_energy[argbest_energy])
             return {
-                "its": its[its > 0][argbest_its],
-                "max_flips_opt": best_max_flips[0][0],
-                "opt_tts": np.nanmin(tts)
+                "energy": mean_energy[argbest_energy],
+                "max_flips_opt": best_max_flips[0][0]
             }
             
 
