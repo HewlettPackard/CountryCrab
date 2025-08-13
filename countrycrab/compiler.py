@@ -836,14 +836,14 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         tcam = mnsat_architecture[0]
         ram = mnsat_architecture[1]
         
-        architecture = [W, B, C, tcam, ram]
+        architecture = [-W, B, C, tcam, ram]
     elif mode == 'MIMO':
         # QUBO or energy mode
         W, transmitted_bits = qubo_mimo_map(config["instance"])
         params['transmitted_bits'] = transmitted_bits
         B = np.zeros(W.shape[0])
         C = np.zeros(1)
-        architecture = [W, B, C]
+        architecture = [-W, B, C]
     else:
         raise ValueError("Unsupported mode. Choose either 'k-SAT' or 'MIMO'.")
     

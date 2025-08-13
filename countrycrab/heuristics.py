@@ -605,8 +605,6 @@ def memHNN(architecture, config, params):
     best_solution = cp.copy(inputs)
     best_metric = cp.full(max_runs, cp.inf, dtype=cp.float32)
 
-    n_iters = 0
-    current_iter = 0
     
     # Calculate initial energy based on representation
     if representation == "spin":
@@ -614,28 +612,14 @@ def memHNN(architecture, config, params):
     else:  # binary representation
         energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
     
-    # Calculate number of temperature steps based on update mode
-    if update_mode == "sequential" or update_mode == "random":
-        temp_steps = max(1, max_flips // variables)
-    elif update_mode == "stochastic_group":
-        temp_steps = max(1, max_flips // num_groups)
-    
     # Main annealing loop
-    for temp_step in range(temp_steps):
-        if current_iter >= max_flips:
-            break
+    for flip in range(max_flips):
         
         # Calculate current noise level based on annealing schedule
-        progress = temp_step / (temp_steps - 1) if temp_steps > 1 else 1.0
+        progress = flip / (max_flips - 1)
         
         if annealing_schedule == "linear":
             current_noise = initial_noise - progress * (initial_noise - final_noise)
-        elif annealing_schedule == "exponential":
-            current_noise = initial_noise * cp.exp(-5.0 * progress)
-        elif annealing_schedule == "geometric":
-            current_noise = initial_noise * (cooling_rate ** temp_step)
-        elif annealing_schedule == "logarithmic":
-            current_noise = initial_noise / cp.log(temp_step + 2)
         else:
             current_noise = initial_noise  # Constant noise (no annealing)
             
@@ -762,7 +746,7 @@ def memHNN(architecture, config, params):
             
             make_values = violated_clauses @ ram
             violated_constr = cp.sum(make_values > 0, axis=1)
-            metric_tracking_mat[:, current_iter] = violated_constr
+            metric_tracking_mat[:, flip] = violated_constr
 
             # Update best solution if current energy is better
             better_indices = cp.where(energy < best_metric)[0]
@@ -774,8 +758,10 @@ def memHNN(architecture, config, params):
                 break
         else:  # QUBO or energy mode
             # Calculate energy using QUBO formulation
-            energy = -0.5 * cp.sum(inputs * (inputs @ W), axis=1) - cp.sum(B * inputs, axis=1) - C
-            metric_tracking_mat[:, current_iter] = (energy).astype(cp.int32)
+            mask = cp.ones_like(W, dtype=cp.float32)- cp.eye(W.shape[0], dtype=cp.float32)  # Mask to ignore diagonal elements
+            energy = -0.5 * cp.sum(inputs * (inputs @ (W*mask)), axis=1) - cp.sum(B * inputs, axis=1) - C -cp.sum(inputs * cp.diag(W), axis=1)
+
+            metric_tracking_mat[:, flip] = energy
             # Update best solution if current energy is better
             better_indices = cp.where(energy < best_metric)[0]
             if better_indices.size > 0:
@@ -784,19 +770,17 @@ def memHNN(architecture, config, params):
 
 
 
-        current_iter += 1
-        n_iters += 1
     
     # If returning from spin representation and we need binary outputs for consistency
     if representation == "spin" and config.get("return_binary", False):
         inputs = (inputs + 1) / 2
     
     # Calculate timing information
-    iterations_timepoints = cp.arange(1, n_iters + 1) * params.get("Tclk", 6e-9)
+    iterations_timepoints = cp.arange(1, flip + 1) * params.get("Tclk", 6e-9)
 
     # get overall best solution (when violated constraints are minimal)
     overall_best_metric = cp.min(best_metric)
     overall_best_solution = best_solution[cp.argmin(best_metric)]
 
     # Return results
-    return metric_tracking_mat[:, :n_iters], n_iters, inputs, iterations_timepoints[cp.newaxis, :], overall_best_solution,overall_best_metric
+    return metric_tracking_mat[:, :flip], flip, inputs, iterations_timepoints[cp.newaxis, :], overall_best_solution,overall_best_metric
