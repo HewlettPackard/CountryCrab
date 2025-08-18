@@ -24,6 +24,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     noise = config.get("noise", 0.8)
     min_noise = config.get("min_noise",noise)
     max_noise = config.get("max_noise",noise)
+    # for Simulated Annealing, final noise is defaul 0 but it can be passed as a parameter
+    noise = config.get("final_noise", 0)
     num_samples = config.get("num_samples",1)
 
     # load parameters to save them in the configuration    
@@ -32,7 +34,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     # task is the type of task to be performed
     task = config.get("task", "debug")
     # metric
-    metric = config.get("metric", "frequentist")
+    metric = config.get("metric", "its")
+    metric_approach = config.get("metric_approach", "frequentist")
     # max runs is the number of parallel initialization (different inputs)
     max_runs = config.get("max_runs", 100)
     # max_flips is the maximum number of iterations
@@ -46,6 +49,8 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     # heuristics specification
     heuristic_name = config.get("heuristic", 'MNSAT')
     compiler_name = config.get("compiler", 'compile_MNSAT')
+    # mode
+    mode = config.get("mode", "k-SAT")
 
     if task == 'hpo':
         # random sampling in case of hpo
@@ -69,7 +74,9 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
         "n_cores": n_cores,
         "n_words": n_words,
         "scheduling": scheduling,
-        "metric": metric
+        "metric": metric,
+        "metric_approach": metric_approach,
+        "mode": mode,
     }
 
     # set resource per trial based on experiments. A high value is used to ensure that the experiment runs but it can be decreased to optimize the use of the GPU
@@ -91,7 +98,7 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
         ),
         # Tuning configuration.
         tune_config=tune.TuneConfig(
-            metric="its",
+            metric=metric,
             mode="min",
             num_samples=1, # TODO this has to be fixed together with the distribution choice above
         ),
