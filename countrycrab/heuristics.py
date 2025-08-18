@@ -592,7 +592,7 @@ def _anneal_kernel(
             lf = float32(0.0)
             for j in range(n_vars):
                 lf += W[i, j] * inputs[r, j]
-            lf += B[i]
+            lf -= B[i]
 
             # Gaussian noise and thresholding
             if sigma > 0.0:
@@ -603,22 +603,21 @@ def _anneal_kernel(
             val = lf + eps
             inputs[r, i] = float32(1.0) if val >= threshold else float32(0.0)
 
-        # Energy recomputation using W_en (zero diag) and B_en = diag(W)
-        # E = -0.5 * sum_i s_i * sum_j (s_j * W_en[i, j]) - sum_i (s_i * B_en[i]) - C
-        acc = float32(0.0)
+        # Energy recomputation: E = -0.5 * s @ (W @ s) + B @ s
+        acc = float32(0.0)  # will hold s^T (W s)
         for i in range(n_vars):
             si = inputs[r, i]
             if si != 0.0:
                 inner = float32(0.0)
                 for j in range(n_vars):
-                    inner += inputs[r, j] * W_en[i, j]
+                    inner += inputs[r, j] * W[i, j]
                 acc += si * inner
 
-        lin = float32(0.0)
+        lin = float32(0.0)  # will hold B^T s
         for i in range(n_vars):
-            lin += inputs[r, i] * B_en[i]
-        # Per-run energy offset (supports scalar-broadcasted or per-run C)
-        E = float32(-0.5) * acc - lin - C_vec[r]
+            lin += inputs[r, i] * B[i]
+
+        E = float32(-0.5) * acc + lin
 
         # Store metric for this flip directly (no helper kernel)
         metric[r, flip] = E

@@ -838,13 +838,18 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         
         architecture = [-W, B, C, tcam, ram]
     elif mode == 'MIMO':
-        # QUBO or energy mode
-        W, transmitted_bits = qubo_mimo_map(config["instance"])
+        # get QUBO matrix and map it to HNN weights and bias
+        Q, transmitted_bits = qubo_mimo_map(config["instance"])
         params['transmitted_bits'] = transmitted_bits
+
+        B = np.diag(Q).copy()
+        W = -(Q + Q.T)
+        np.fill_diagonal(W, 0.0)
+        C = np.zeros(1, dtype=float)
         # this works not sure why
-        B = np.zeros(W.shape[0])
-        C = np.zeros(1)        
-        architecture = [-W, B, C]
+        # B = np.zeros(W.shape[0])
+        # C = np.zeros(1)        
+        architecture = [W, B, C]
 
         # remove this if it doesn't work
         # B = np.diag(W)
@@ -863,44 +868,37 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
 
 def qubo_mimo_map(file_path):
     """
-    Extract the coupling matrix W from a MIMO QUBO file.
+    Extract the coupling matrix Q from a MIMO QUBO file.
     
     Parameters:
     file_path (str): Path to the QUBO file
     
     Returns:
-    numpy.ndarray: The coupling matrix W
-    int: Number of variables
+    numpy.ndarray: The coupling matrix Q
     str: Transmitted bits
     """
     with open(file_path, 'r') as f:
-        lines = f.readlines()
-    
-    # Get the number of variables
-    num_variables = int(lines[0].strip())
-    
-    # Get the transmitted bits
-    transmitted_bits = lines[1].strip()
-    
-    # Initialize the coupling matrix with zeros
-    W = np.zeros((num_variables, num_variables))
-    
-    # Process the QUBO terms (starting from line 3)
+        lines = [ln.strip() for ln in f if ln.strip()]
+
+    n = int(lines[0])
+    transmitted_bits = lines[1]
+
+    Q = np.zeros((n, n), dtype=float)
+
     for line in lines[2:]:
-        # Split the line into tokens and convert to appropriate types
-        tokens = line.strip().split()
-        
-        if len(tokens) == 2:
-            # Diagonal term: i value
-            i = int(tokens[0])
-            value = float(tokens[1])
-            W[i, i] = value
-        elif len(tokens) == 3:
-            # Off-diagonal term: i j value
-            i = int(tokens[0])
-            j = int(tokens[1])
-            value = float(tokens[2])
-            W[i, j] = value
-            W[j, i] = value  # Ensure symmetry for QUBO matrix
-    
-    return W, transmitted_bits
+        tok = line.split()
+        if len(tok) == 2:
+            i, val = int(tok[0]), float(tok[1])
+            Q[i, i] = val
+        elif len(tok) == 3:
+            i, j, val = int(tok[0]), int(tok[1]), float(tok[2])
+            if i == j:
+                Q[i, i] += val            # rare, but mirrors Code 1’s guard
+            elif i < j:
+                Q[i, j] = val             # store upper triangle only
+            else:
+                Q[j, i] = val
+        else:
+            raise ValueError(f"Bad line: {line}")
+
+    return Q, transmitted_bits
