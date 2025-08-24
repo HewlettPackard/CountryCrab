@@ -846,15 +846,8 @@ def compile_memHNN(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         W = -(Q + Q.T)
         np.fill_diagonal(W, 0.0)
         C = np.zeros(1, dtype=float)
-        # this works not sure why
-        # B = np.zeros(W.shape[0])
-        # C = np.zeros(1)        
+     
         architecture = [W, B, C]
-
-        # remove this if it doesn't work
-        # B = np.diag(W)
-        # np.fill_diagonal(W, 0)
-        # architecture = [-W, B, C]
         
     else:
         raise ValueError("Unsupported mode. Choose either 'k-SAT' or 'MIMO'.")
