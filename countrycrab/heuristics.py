@@ -26,6 +26,8 @@ import cupy as cp
 from numba import cuda, float32, int32
 from numba.cuda.random import create_xoroshiro128p_states, xoroshiro128p_normal_float32
 import warnings
+import toml
+import subprocess
 
 
 def MNSAT(architecture, config, params):
@@ -783,3 +785,74 @@ def memHNN(architecture, config, params):
         overall_best_solution,
         overall_best_metric,
     )
+
+
+def pbits_ising(architecture, config, params):
+
+    # Unpack architecture and coerce types
+    W = _as_numpy_f32(architecture[0])  # (N, N)
+    B = _as_numpy_f32(architecture[1])  # (N,)
+
+    # Params
+    max_runs  = int(params.get("max_runs", 1000))
+    max_flips = int(params.get("max_flips", 1000))
+    activation_fn = params.get("activation_fn", "linear")  # "tanh" or "step"
+    num_threads = int(params.get("num_threads", 1))
+    run_per_thread = int(max_runs / num_threads)
+
+    # Config
+    initial_noise = np.float32(config.get("noise", 0.8))
+    final_noise   = np.float32(config.get("final_noise", 0.0))
+
+    # Define paths
+    # Assuming the script is run from the root of the CountryCrab project
+    binary_dir = "submodules/ising-machine-cpu"
+    binary_path = os.path.join(binary_dir, "target", "release", "ising_sa")
+    
+    # Create paths for w, h, and config files inside the binary directory
+    w_path = os.path.join(binary_dir, "path_to_w.csv")
+    h_path = os.path.join(binary_dir, "path_to_h.csv")
+    config_path = os.path.join(binary_dir, "pbits_config.toml")
+
+    # Save W and B to files
+    np.savetxt(w_path, W, delimiter=",")
+    np.savetxt(h_path, B, delimiter=",")
+
+    pbits_config = {
+        'steps_per_temp': 1,
+        'num_temps': max_flips,
+        'initial_temp': float(initial_noise),
+        'final_temp': float(final_noise),
+        'solutions_per_thread': run_per_thread,
+        'prob_method': activation_fn,
+        'num_threads': num_threads,
+        'J_values_file': "path_to_w.csv", # Relative to binary_dir
+        'h_values_file': "path_to_h.csv"  # Relative to binary_dir
+    }
+
+    with open(config_path, 'w') as f:
+        toml.dump(pbits_config, f)
+
+    # Run the binary
+    command = [
+        os.path.abspath(binary_path),
+        os.path.basename(config_path)
+    ]
+    
+    result = subprocess.run(
+        command,
+        cwd=binary_dir,
+        capture_output=True,
+        text=True,
+        check=True
+    )
+
+    # Print output for debugging
+    print("--- STDOUT ---")
+    print(result.stdout)
+    print("--- STDERR ---")
+    print(result.stderr)
+
+    # NOTE: The rest of this function seems incomplete. 
+    # Returning placeholder values.
+    return None, None, None, None, None, None
