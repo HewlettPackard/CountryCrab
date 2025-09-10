@@ -1,0 +1,3 @@
+[submodule "submodules/ising-machine-cpu"]
+	path = submodules/ising-machine-cpu
+	url = https://github.com/lucashmorais/ising-machine-cpu

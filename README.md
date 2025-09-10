@@ -37,6 +37,14 @@ In the case the container is not used, to install the CountryCrab package run
 ```sh
 pip install -e .
 ```
+
+## Optional: Ising Machine CPU Solver
+CountryCrab can be used with `ising-machine-cpu`, a CPU-based solver. To include it, add it as a submodule:
+```sh
+git submodule add https://github.com/lucashmorais/ising-machine-cpu submodules/ising-machine-cpu
+git submodule update --init --recursive
+```
+
 ## Basic usage
 An example of basic usage for CountryCrab can be found in `tests/basic_usage.ipynb`.
 The first step is to create a configuration and parameters for the experiment.
