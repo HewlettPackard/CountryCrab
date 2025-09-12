@@ -33,6 +33,10 @@ RUN apt-get install -y \
       g++ \
       locales
 
+# install rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
 WORKDIR /tmp
 
 # install dependencies from requirements.txt
