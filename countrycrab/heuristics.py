@@ -18,7 +18,10 @@ import numpy as np
 import pandas as pd
 import os
 import typing as t
+from typing import Dict, List, Tuple
+from decimal import Decimal
 import math
+import csv
 
 import campie
 import cupy as cp
@@ -790,8 +793,22 @@ def memHNN(architecture, config, params):
 def pbits_ising(architecture, config, params):
 
     # Unpack architecture and coerce types
-    W = _as_numpy_f32(architecture[0])  # (N, N)
-    B = _as_numpy_f32(architecture[1])  # (N,)
+    J = _as_numpy_f32(architecture[0])  # (N, N)
+    h = _as_numpy_f32(architecture[1])  # (N,)
+
+    N = J.shape[0]
+    neighbors = [[] for _ in range(N)]
+
+    # Find non-zero elements in the upper triangle to define edges
+    rows, cols = np.where(np.triu(J, k=1) != 0)
+
+    for i, j in zip(rows, cols):
+        neighbors[i].append(j)
+        neighbors[j].append(i)
+
+    # Sort each neighbor list for deterministic output
+    for i in range(N):
+        neighbors[i].sort()
 
     # Params
     max_runs  = int(params.get("max_runs", 1000))
@@ -806,17 +823,31 @@ def pbits_ising(architecture, config, params):
 
     # Define paths
     # Assuming the script is run from the root of the CountryCrab project
-    binary_dir = "submodules/ising-machine-cpu"
+    if os.getcwd().endswith("CountryCrab"):
+        module_path = os.getcwd()
+    else:
+        module_path = os.path.abspath(os.path.join(".."))
+    binary_dir = os.path.join(module_path,"submodules/ising-machine-cpu")
     binary_path = os.path.join(binary_dir, "target", "release", "ising_sa")
     
-    # Create paths for w, h, and config files inside the binary directory
-    w_path = os.path.join(binary_dir, "path_to_w.csv")
-    h_path = os.path.join(binary_dir, "path_to_h.csv")
-    config_path = os.path.join(binary_dir, "pbits_config.toml")
+    # Create paths for w, h, and config files inside the binary directory. Use pid to avoid conflicts.
+    j_path = os.path.join(binary_dir, f"J_{os.getpid()}.csv")
+    h_path = os.path.join(binary_dir, f"h_{os.getpid()}.csv")
+    neighbors_path = os.path.join(binary_dir, f"neighbors_{os.getpid()}.csv")
+    config_path = os.path.join(binary_dir, f"pbits_config_{os.getpid()}.toml")
 
-    # Save W and B to files
-    np.savetxt(w_path, W, delimiter=",")
-    np.savetxt(h_path, B, delimiter=",")
+    # Remove the diagonal 0s from J
+    J_no_diag = J[~np.eye(N, dtype=bool)].reshape(N, N - 1)
+
+    np.savetxt(j_path, J_no_diag, delimiter=",")
+    np.savetxt(h_path, h, delimiter=",")
+
+    max_deg = max((len(row) for row in neighbors), default=0)
+    with open(neighbors_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        for row in neighbors:
+            padded = row + [-1] * (max_deg - len(row))
+            writer.writerow(padded)
 
     pbits_config = {
         'steps_per_temp': 1,
@@ -826,9 +857,10 @@ def pbits_ising(architecture, config, params):
         'solutions_per_thread': run_per_thread,
         'prob_method': activation_fn,
         'num_threads': num_threads,
-        'J_values_file': "path_to_w.csv", # Relative to binary_dir
-        'h_values_file': "path_to_h.csv",  # Relative to binary_dir
-        'generate_solutions_csv' : True
+        'J_values_file': j_path,  # Relative to binary_dir
+        'h_values_file': h_path,  # Relative to binary_dir
+        'neighbors_file': neighbors_path,  # Relative to binary_dir
+        'generate_solutions_csv': True
     }
 
     with open(config_path, 'w') as f:
@@ -848,12 +880,16 @@ def pbits_ising(architecture, config, params):
         check=True
     )
 
-    # Print output for debugging
-    print("--- STDOUT ---")
-    print(result.stdout)
-    print("--- STDERR ---")
-    print(result.stderr)
+    # Read the output file
+    metric = np.loadtxt(os.path.join(binary_dir, "all_energy.csv"), delimiter=",")
+    overall_best_solution = np.loadtxt(os.path.join(binary_dir, "all_solutions.csv"), delimiter=",")
+
+    # delete the temporary files
+    os.remove(j_path)
+    os.remove(h_path)
+    os.remove(neighbors_path)
+    os.remove(config_path)
 
     # NOTE: The rest of this function seems incomplete. 
     # Returning placeholder values.
-    return None, None, None, None, None, None
+    return metric, None, None, None, None, None
