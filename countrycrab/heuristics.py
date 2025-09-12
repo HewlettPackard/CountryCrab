@@ -827,7 +827,8 @@ def pbits_ising(architecture, config, params):
         'prob_method': activation_fn,
         'num_threads': num_threads,
         'J_values_file': "path_to_w.csv", # Relative to binary_dir
-        'h_values_file': "path_to_h.csv"  # Relative to binary_dir
+        'h_values_file': "path_to_h.csv",  # Relative to binary_dir
+        'generate_solutions_csv' : True
     }
 
     with open(config_path, 'w') as f:
