@@ -882,6 +882,9 @@ def pbits_ising(architecture, config, params):
     )
 
     # Read the output file
+    metric_path = os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv")
+    solutions_path = os.path.join(binary_dir, f"solutions_{os.getpid()}.csv")
+    appended_evolutions_path = os.path.join(binary_dir, f"appended_evolutions_{os.getpid()}.csv")
     metric = np.loadtxt(os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv"), delimiter=",")
     overall_best_solution = np.loadtxt(os.path.join(binary_dir, f"solutions_{os.getpid()}.csv"), delimiter=",")
 
@@ -889,6 +892,9 @@ def pbits_ising(architecture, config, params):
     os.remove(j_path)
     os.remove(h_path)
     os.remove(neighbors_path)
+    os.remove(metric_path)
+    os.remove(solutions_path)
+    os.remove(appended_evolutions_path)
     os.remove(config_path)
 
     # NOTE: The rest of this function seems incomplete. 
