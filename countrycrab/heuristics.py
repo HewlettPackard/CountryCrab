@@ -860,7 +860,8 @@ def pbits_ising(architecture, config, params):
         'J_values_file': j_path,  # Relative to binary_dir
         'h_values_file': h_path,  # Relative to binary_dir
         'neighbors_file': neighbors_path,  # Relative to binary_dir
-        'generate_solutions_csv': True
+        'generate_solutions_csv': True,
+        'uid':str(os.getpid())
     }
 
     with open(config_path, 'w') as f:
@@ -881,8 +882,8 @@ def pbits_ising(architecture, config, params):
     )
 
     # Read the output file
-    metric = np.loadtxt(os.path.join(binary_dir, "all_energy.csv"), delimiter=",")
-    overall_best_solution = np.loadtxt(os.path.join(binary_dir, "all_solutions.csv"), delimiter=",")
+    metric = np.loadtxt(os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv"), delimiter=",")
+    overall_best_solution = np.loadtxt(os.path.join(binary_dir, f"solutions_{os.getpid()}.csv"), delimiter=",")
 
     # delete the temporary files
     os.remove(j_path)
