@@ -10,3 +10,4 @@ ray
 ray[tune]
 campie[cu12x]
 numba
+toml
