@@ -25,6 +25,7 @@ from inspect import getmembers, isfunction
 from countrycrab.compiler import compile_MNSAT, compile_GNSAT,compile_memHNN
 from countrycrab.analyze import vector_its, vector_tts
 import countrycrab.heuristics
+import warnings
 
 import cupy as cp
 
@@ -34,8 +35,8 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
 
     # Check GPUs are available.
     if os.environ.get("CUDA_VISIBLE_DEVICES", None) is None:
-        raise RuntimeError(
-            f"No GPUs available. Please, set `CUDA_VISIBLE_DEVICES` environment variable."
+        warnings.warn(
+            "No GPUs available. `CUDA_VISIBLE_DEVICES` is not set. Running on CPU."
         )
 
 
@@ -84,7 +85,8 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         'GNSAT' : 'compile_GNSAT',
         'walksat_skc' : 'compile_GNSAT',
         'walksat_b' : 'compile_GNSAT',
-        'memHNN' : 'compile_memHNN'
+        'memHNN' : 'compile_memHNN',
+        'memHNN' : 'pbits_ising'
     }
     if compiler_name != heuristic_to_compiler.get(heuristic_name):
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")

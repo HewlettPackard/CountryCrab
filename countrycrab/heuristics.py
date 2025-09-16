@@ -819,7 +819,7 @@ def pbits_ising(architecture, config, params):
 
     # Config
     initial_noise = np.float32(config.get("noise", 0.8))
-    final_noise   = np.float32(config.get("final_noise", 0.0))
+    final_noise   = np.float32(config.get("final_noise", 1e-9))
 
     # Define paths
     # Assuming the script is run from the root of the CountryCrab project
@@ -885,8 +885,8 @@ def pbits_ising(architecture, config, params):
     metric_path = os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv")
     solutions_path = os.path.join(binary_dir, f"solutions_{os.getpid()}.csv")
     appended_evolutions_path = os.path.join(binary_dir, f"appended_evolutions_{os.getpid()}.csv")
-    metric = np.loadtxt(os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv"), delimiter=",")
-    overall_best_solution = np.loadtxt(os.path.join(binary_dir, f"solutions_{os.getpid()}.csv"), delimiter=",")
+    metric = np.loadtxt(metric_path, delimiter=",")
+    overall_best_solution_history = np.loadtxt(solutions_path, delimiter=",")
 
     # delete the temporary files
     os.remove(j_path)
@@ -897,6 +897,12 @@ def pbits_ising(architecture, config, params):
     os.remove(appended_evolutions_path)
     os.remove(config_path)
 
-    # NOTE: The rest of this function seems incomplete. 
-    # Returning placeholder values.
-    return metric, None, None, None, None, None
+
+
+    # note that metric first column corresponds to the energy without any sweep (just after the random initialization)
+    # the first column of overall best solution is the energy evolution of the first best solution
+    # the rest is the evolution of the spin for the best solution
+    overall_best_metric = np.min(overall_best_solution_history[:,0])
+    overall_best_solution = overall_best_solution_history[np.argmin(overall_best_solution_history[:,0]),1:]
+
+    return metric[:,1:], None, None, None, overall_best_solution, overall_best_metric
