@@ -12,6 +12,7 @@ from solver import solve
 import argparse
 import json
 import numpy as np
+import time
 
 
 def schedule(config_fname: t.Optional[str] = None) -> None:   
@@ -24,7 +25,7 @@ def schedule(config_fname: t.Optional[str] = None) -> None:
     noise = config.get("noise", 0.8)
     min_noise = config.get("min_noise",noise)
     max_noise = config.get("max_noise",noise)
-    # for Simulated Annealing, final noise is defaul 0 but it can be passed as a parameter
+    # for Simulated Annealing, final noise is defaul 1e-9 but it can be passed as a parameter
     noise = config.get("final_noise", 0)
     num_samples = config.get("num_samples",1)
 

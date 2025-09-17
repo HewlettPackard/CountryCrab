@@ -86,7 +86,7 @@ def solve(config: t.Dict, params: t.Dict) -> t.Union[t.Dict, t.Tuple]:
         'walksat_skc' : 'compile_GNSAT',
         'walksat_b' : 'compile_GNSAT',
         'memHNN' : 'compile_memHNN',
-        'memHNN' : 'pbits_ising'
+        'pbits_ising' : 'compile_memHNN'
     }
     if compiler_name != heuristic_to_compiler.get(heuristic_name):
         raise ValueError(f"Compiler {compiler_name} is not compatible with heuristic {heuristic_name}")

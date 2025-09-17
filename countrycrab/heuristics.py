@@ -686,7 +686,7 @@ def memHNN(architecture, config, params):
 
     # Config
     initial_noise = np.float32(config.get("noise", 0.8))
-    final_noise   = np.float32(config.get("final_noise", 0.0))
+    final_noise   = np.float32(config.get("final_noise", 1e-9))
     threshold     = np.float32(config.get("threshold", 0.0))
     update_mode   = config.get("update_mode", "sequential")  # "sequential" or "random"
 
@@ -797,18 +797,15 @@ def pbits_ising(architecture, config, params):
     h = _as_numpy_f32(architecture[1])  # (N,)
 
     N = J.shape[0]
-    neighbors = [[] for _ in range(N)]
 
-    # Find non-zero elements in the upper triangle to define edges
-    rows, cols = np.where(np.triu(J, k=1) != 0)
+    # Build neighbors list (exclude self-loops), does not consider sparse representation
+    all_indices = np.arange(N)
+    full_matrix = np.tile(all_indices, (N, 1))
+    diagonal_mask = np.eye(N, dtype=bool)
+    neighbors = full_matrix[~diagonal_mask].reshape(N, N - 1)
+    # convert neighbors to int
+    neighbors = neighbors.astype(int).tolist()
 
-    for i, j in zip(rows, cols):
-        neighbors[i].append(j)
-        neighbors[j].append(i)
-
-    # Sort each neighbor list for deterministic output
-    for i in range(N):
-        neighbors[i].sort()
 
     # Params
     max_runs  = int(params.get("max_runs", 1000))
@@ -821,33 +818,28 @@ def pbits_ising(architecture, config, params):
     initial_noise = np.float32(config.get("noise", 0.8))
     final_noise   = np.float32(config.get("final_noise", 1e-9))
 
-    # Define paths
-    # Assuming the script is run from the root of the CountryCrab project
-    if os.getcwd().endswith("CountryCrab"):
-        module_path = os.getcwd()
-    else:
-        module_path = os.path.abspath(os.path.join(".."))
-    binary_dir = os.path.join(module_path,"submodules/ising-machine-cpu")
-    binary_path = os.path.join(binary_dir, "target", "release", "ising_sa")
+    # Get the path to the ising_sa binary. It is located in the submodules/ising-machine-cpu/target/release/ folder.
+    # The path is relative to the current file.
+    # Get the absolute path to the project root directory
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    binary_path = os.path.join(project_root, "submodules", "ising-machine-cpu", "target", "release", "ising_sa")
+
+    working_dir = os.path.join(project_root, "submodules", "ising-machine-cpu")
+
     
     # Create paths for w, h, and config files inside the binary directory. Use pid to avoid conflicts.
-    j_path = os.path.join(binary_dir, f"J_{os.getpid()}.csv")
-    h_path = os.path.join(binary_dir, f"h_{os.getpid()}.csv")
-    neighbors_path = os.path.join(binary_dir, f"neighbors_{os.getpid()}.csv")
-    config_path = os.path.join(binary_dir, f"pbits_config_{os.getpid()}.toml")
+    j_path = os.path.join(working_dir, f"J_{os.getpid()}.csv")
+    h_path = os.path.join(working_dir, f"h_{os.getpid()}.csv")
+    neighbors_path = os.path.join(working_dir, f"neighbors_{os.getpid()}.csv")
+    config_path = os.path.join(working_dir, f"pbits_config_{os.getpid()}.toml")
 
     # Remove the diagonal 0s from J
     J_no_diag = J[~np.eye(N, dtype=bool)].reshape(N, N - 1)
 
-    np.savetxt(j_path, J_no_diag, delimiter=",")
+    np.savetxt(j_path, -J_no_diag, delimiter=",")
     np.savetxt(h_path, h, delimiter=",")
+    np.savetxt(neighbors_path, neighbors, delimiter=",", fmt='%d')
 
-    max_deg = max((len(row) for row in neighbors), default=0)
-    with open(neighbors_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        for row in neighbors:
-            padded = row + [-1] * (max_deg - len(row))
-            writer.writerow(padded)
 
     pbits_config = {
         'steps_per_temp': 1,
@@ -861,7 +853,8 @@ def pbits_ising(architecture, config, params):
         'h_values_file': h_path,  # Relative to binary_dir
         'neighbors_file': neighbors_path,  # Relative to binary_dir
         'generate_solutions_csv': True,
-        'uid':str(os.getpid())
+        'uid':str(os.getpid()),
+        'qubo_formulation': True
     }
 
     with open(config_path, 'w') as f:
@@ -875,16 +868,16 @@ def pbits_ising(architecture, config, params):
     
     result = subprocess.run(
         command,
-        cwd=binary_dir,
+        cwd=working_dir,
         capture_output=True,
         text=True,
         check=True
     )
 
     # Read the output file
-    metric_path = os.path.join(binary_dir, f"all_energy_{os.getpid()}.csv")
-    solutions_path = os.path.join(binary_dir, f"solutions_{os.getpid()}.csv")
-    appended_evolutions_path = os.path.join(binary_dir, f"appended_evolutions_{os.getpid()}.csv")
+    metric_path = os.path.join(working_dir, f"all_energy_{os.getpid()}.csv")
+    solutions_path = os.path.join(working_dir, f"solutions_{os.getpid()}.csv")
+    appended_evolutions_path = os.path.join(working_dir, f"appended_evolutions_{os.getpid()}.csv")
     metric = np.loadtxt(metric_path, delimiter=",")
     overall_best_solution_history = np.loadtxt(solutions_path, delimiter=",")
 
@@ -904,5 +897,19 @@ def pbits_ising(architecture, config, params):
     # the rest is the evolution of the spin for the best solution
     overall_best_metric = np.min(overall_best_solution_history[:,0])
     overall_best_solution = overall_best_solution_history[np.argmin(overall_best_solution_history[:,0]),1:]
+
+    # note that the energy needs to be rescaled to QUBO
+    scaling_factor = 0 
+    for i in range(N):
+        for j in range(N):
+            if i<j:
+                scaling_factor += -J[i,j]*0.25
+    for i in range(N):
+        scaling_factor += h[i]*0.5
+
+    metric = metric + scaling_factor
+    overall_best_metric = overall_best_metric + scaling_factor
+
+    print(scaling_factor)
 
     return metric[:,1:], None, None, None, overall_best_solution, overall_best_metric
